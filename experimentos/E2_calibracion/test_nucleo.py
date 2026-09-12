@@ -1,6 +1,13 @@
 import numpy as np
 
-from nucleo import correlacion_spearman, descomponer_rango_nucleo, error_rms, tau
+from nucleo import (
+    correlacion_spearman,
+    descomponer_rango_nucleo,
+    error_rms,
+    reconstrucciones_bootstrap,
+    tau_frecuencia,
+    tau_incertidumbre,
+)
 
 
 def test_descomponer_region_puramente_baja_frecuencia():
@@ -12,12 +19,61 @@ def test_descomponer_region_puramente_baja_frecuencia():
     assert norma_rango > 0
 
 
-def test_tau_alto_para_ruido_puro_por_encima_del_corte():
+def test_tau_frecuencia_alto_para_ruido_puro_por_encima_del_corte():
     rng = np.random.default_rng(0)
     region = rng.normal(0, 1, size=(64, 64))  # ruido blanco: energía pareja en toda frecuencia
-    t_corte_bajo = tau(region, f_c=0.1)  # casi todo cae en "núcleo"
-    t_corte_alto = tau(region, f_c=0.9)  # casi todo cae en "rango"
+    t_corte_bajo = tau_frecuencia(region, f_c=0.1)  # casi todo cae en "núcleo"
+    t_corte_alto = tau_frecuencia(region, f_c=0.9)  # casi todo cae en "rango"
     assert t_corte_bajo > t_corte_alto
+
+
+def test_tau_incertidumbre_es_cero_sin_variacion_entre_reconstrucciones():
+    reconstrucciones = np.stack([np.full((32, 32), 0.5)] * 4)
+    t = tau_incertidumbre(reconstrucciones, y0=0, x0=0, tam=32)
+    assert t == 0.0
+
+
+def test_tau_incertidumbre_baja_si_hay_mas_estructura_real_con_igual_ruido():
+    """Es un cociente (coeficiente de variación): a igual dispersión entre
+    reconstrucciones, más estructura real de fondo debe dar τ MÁS BAJO (más
+    confianza relativa) — al revés de tau_frecuencia, que subía con el
+    detalle en vez de bajar."""
+    rng = np.random.default_rng(3)
+    eje = np.linspace(0, 4 * np.pi, 32)
+    xx, yy = np.meshgrid(eje, eje)
+    poca_estructura = 0.5 + 0.01 * np.sin(xx)
+    mucha_estructura = 0.5 + 0.3 * np.sin(xx) * np.cos(yy)
+
+    def con_ruido(base, sigma, k=4):
+        return np.stack([base + rng.normal(0, sigma, base.shape) for _ in range(k)])
+
+    t_poca = tau_incertidumbre(con_ruido(poca_estructura, 0.02), 0, 0, 32)
+    t_mucha = tau_incertidumbre(con_ruido(mucha_estructura, 0.02), 0, 0, 32)
+    assert t_mucha < t_poca
+
+
+def test_tau_incertidumbre_region_lisa_vs_texturada_con_verdad_conocida():
+    """Caso de control con verdad conocida: mitad lisa, mitad con textura
+    fuerte, degradada y reconstruida con bootstrap. Documenta el
+    comportamiento real medido (no una expectativa a priori, que ya falló
+    una vez en este mismo diseño): con τ normalizado por estructura local,
+    la región lisa da τ más alto (menos confianza relativa) que la
+    texturada — lo esperado de un coeficiente de variación."""
+    rng = np.random.default_rng(7)
+    tam = 128
+    x_verdad = np.zeros((tam, tam))
+    x_verdad[:, tam // 2 :] = 0.5  # mitad izquierda lisa, mitad derecha con borde fuerte
+    eje = np.arange(tam)
+    textura = 0.15 * np.sin(eje[None, :] * 1.2) * np.cos(eje[:, None] * 1.3)
+    x_verdad[:, tam // 2 :] += textura[:, tam // 2 :]
+    x_verdad = np.clip(x_verdad, 0, 1)
+
+    sigma_psf, factor, sigma_ruido = 1.0, 2, 0.02
+    recons, _ = reconstrucciones_bootstrap(x_verdad, sigma_psf, factor, sigma_ruido, k=4, rng=rng)
+
+    t_lisa = tau_incertidumbre(recons, y0=32, x0=16, tam=32)
+    t_texturada = tau_incertidumbre(recons, y0=32, x0=tam // 2 + 16, tam=32)
+    assert t_lisa > t_texturada
 
 
 def test_error_rms_cero_si_identico():

@@ -18,14 +18,12 @@ from pathlib import Path
 import numpy as np
 
 from nucleo import (
-    banda_recuperada,
     cargar_gris_lineal,
-    degradar,
     error_rms,
     correlacion_spearman,
+    reconstrucciones_bootstrap,
     regiones,
-    richardson_lucy_sr,
-    tau,
+    tau_incertidumbre,
 )
 
 FUENTE_POR_DEFECTO = Path(__file__).resolve().parent.parent / "E1_deconvolucion" / "fuente"
@@ -36,6 +34,7 @@ TAM_REGION = 128
 SIGMA_PSF = 1.2
 FACTOR = 2
 SIGMA_RUIDO = 0.01
+K_BOOTSTRAP = 4
 SEMILLA = 20260912
 
 CORRELACION_MINIMA_VERDE = 0.6
@@ -53,23 +52,20 @@ def medir_imagen(ruta: Path, rng: np.random.Generator) -> list[dict]:
     img = cargar_gris_lineal(ruta)
     x_verdad = recorte_central(img, TAM_CROP).astype(np.float64)
 
-    y, kernel = degradar(x_verdad, SIGMA_PSF, FACTOR, SIGMA_RUIDO, rng)
-    x_rl, _ = richardson_lucy_sr(y, kernel, FACTOR, x_verdad.shape, SIGMA_RUIDO)
-
-    f_c = banda_recuperada(x_rl, x_verdad)
+    recons, _ = reconstrucciones_bootstrap(x_verdad, SIGMA_PSF, FACTOR, SIGMA_RUIDO, K_BOOTSTRAP, rng)
+    x_rl_media = recons.mean(axis=0)
 
     filas = []
     for y0, x0 in regiones(x_verdad.shape, TAM_REGION):
-        region_rl = x_rl[y0 : y0 + TAM_REGION, x0 : x0 + TAM_REGION]
+        region_media = x_rl_media[y0 : y0 + TAM_REGION, x0 : x0 + TAM_REGION]
         region_verdad = x_verdad[y0 : y0 + TAM_REGION, x0 : x0 + TAM_REGION]
         filas.append(
             {
                 "archivo": ruta.name,
                 "fila": y0 // TAM_REGION,
                 "columna": x0 // TAM_REGION,
-                "f_c": f_c,
-                "tau": tau(region_rl, f_c),
-                "error_rms": error_rms(region_rl, region_verdad),
+                "tau": tau_incertidumbre(recons, y0, x0, TAM_REGION),
+                "error_rms": error_rms(region_media, region_verdad),
             }
         )
     return filas
@@ -92,7 +88,7 @@ def main() -> None:
         try:
             filas = medir_imagen(archivo, rng)
             todas_las_filas.extend(filas)
-            print(f"  {archivo.name}: {len(filas)} regiones, f_c={filas[0]['f_c']:.3f}")
+            print(f"  {archivo.name}: {len(filas)} regiones")
         except ValueError as e:
             print(f"  [omitida] {archivo.name}: {e}", file=sys.stderr)
 

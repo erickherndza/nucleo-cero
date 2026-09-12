@@ -54,9 +54,55 @@ def descomponer_rango_nucleo(region: np.ndarray, f_c: float) -> tuple[float, flo
     return norma_rango, norma_nucleo
 
 
-def tau(region: np.ndarray, f_c: float, eps: float = 1e-8) -> float:
+def tau_frecuencia(region: np.ndarray, f_c: float, eps: float = 1e-8) -> float:
+    """Primera versión de τ probada (avance-1.4): dio correlación NEGATIVA
+    con el error real (-0.42, hasta -0.92 por imagen). Se queda en el
+    código como referencia y para que el test que documenta el hallazgo
+    siga corriendo — no usar esto para el veredicto de la puerta."""
     norma_rango, norma_nucleo = descomponer_rango_nucleo(region, f_c)
     return norma_nucleo / max(norma_rango, eps)
+
+
+def reconstrucciones_bootstrap(
+    x_verdad: np.ndarray,
+    sigma_psf: float,
+    factor: int,
+    sigma_ruido: float,
+    k: int,
+    rng: np.random.Generator,
+):
+    """K reconstrucciones de la MISMA escena con K realizaciones de ruido
+    independientes — no es una medición sobre una sola imagen, es la base
+    para medir cuánto cambia la reconstrucción si el ruido hubiera caído
+    distinto. Devuelve un arreglo (k, H, W) y el kernel usado."""
+    reconstrucciones = []
+    kernel = None
+    for _ in range(k):
+        y, kernel = degradar(x_verdad, sigma_psf, factor, sigma_ruido, rng)
+        x_rl, _ = richardson_lucy_sr(y, kernel, factor, x_verdad.shape, sigma_ruido)
+        reconstrucciones.append(x_rl)
+    return np.stack(reconstrucciones), kernel
+
+
+def tau_incertidumbre(reconstrucciones: np.ndarray, y0: int, x0: int, tam: int, eps: float = 1e-6) -> float:
+    """τ operacionalizado como sensibilidad al ruido, NORMALIZADA por la
+    estructura local: RMS de la desviación estándar entre reconstrucciones
+    (misma escena, ruido distinto), dividida por la desviación estándar de
+    la reconstrucción media en esa región (cuánto contraste/estructura real
+    hay ahí).
+
+    Sin normalizar por la estructura local, esta métrica cae en la MISMA
+    trampa que tau_frecuencia (avance-1.4): la dispersión absoluta entre
+    reconstrucciones escala con el contraste local (una zona con textura
+    fuerte tiene más variación absoluta simplemente porque hay más señal),
+    así que sin normalizar termina midiendo "cuánto detalle hay" otra vez,
+    no "cuánta confianza hay". Como cociente (coeficiente de variación) sí
+    apunta a lo que importa: cuán grande es la incertidumbre RELATIVA a la
+    estructura real que el algoritmo cree haber encontrado ahí."""
+    parche = reconstrucciones[:, y0 : y0 + tam, x0 : x0 + tam]
+    dispersion = np.sqrt(parche.var(axis=0).mean())
+    estructura_local = parche.mean(axis=0).std()
+    return float(dispersion / max(estructura_local, eps))
 
 
 def error_rms(region_estimado: np.ndarray, region_verdad: np.ndarray) -> float:

@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+.venv/
+*.egg-info/
+
+# corpus real de clientes: nunca versionado (privacidad + peso)
+experimentos/E0_margen/corpus/*
+!experimentos/E0_margen/corpus/.gitkeep

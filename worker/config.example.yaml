@@ -1,0 +1,7 @@
+front_url: "https://erickhernandezarias.net/uppimagen"
+worker_token: "CAMBIAR"
+worker_id: "mac-2015"
+intervalo_segundos: 300
+factor_por_defecto: 2.0
+directorio_temporal: "./tmp"
+max_frames_burst: 12

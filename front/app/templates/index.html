@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>UppImagenScale — Mejora de resolución real</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
+    h1 { font-size: 1.6rem; }
+    .regla { background: #f0f9ff; border: 1px solid #bae6fd; border-radius: 8px; padding: 1rem; margin: 1.5rem 0; font-size: 0.95rem; }
+    form { display: flex; flex-direction: column; gap: 0.75rem; }
+    label { font-weight: 600; font-size: 0.9rem; }
+    input, select { padding: 0.5rem; border: 1px solid #ccc; border-radius: 6px; font-size: 1rem; }
+    button { padding: 0.7rem; border: none; border-radius: 6px; background: #0369a1; color: white; font-size: 1rem; cursor: pointer; }
+    button:hover { background: #075985; }
+    #resultado { margin-top: 1rem; padding: 1rem; border-radius: 6px; display: none; }
+    #resultado.ok { background: #dcfce7; display: block; }
+    #resultado.error { background: #fee2e2; display: block; }
+  </style>
+</head>
+<body>
+  <h1>UppImagenScale</h1>
+  <p>Mejora de resolución real de fotografías, sin generación ni alucinación de detalle.</p>
+  <div class="regla">
+    <strong>Nuestra garantía:</strong> cada entrega incluye un test de consistencia
+    verificable — degradamos el resultado con el mismo modelo físico de la cámara
+    y comprobamos que reproduce tu foto original. Si no lo hace, te lo decimos.
+  </div>
+
+  <form id="form-subida">
+    <label for="email">Tu email</label>
+    <input type="email" id="email" name="email" required>
+
+    <label for="factor">Factor de mejora</label>
+    <select id="factor" name="factor">
+      <option value="1.5">1.5×</option>
+      <option value="2.0" selected>2.0×</option>
+    </select>
+
+    <label for="archivos">Fotos (RAW o JPEG, hasta el límite del formulario)</label>
+    <input type="file" id="archivos" name="archivos" multiple accept=".jpg,.jpeg,.png,.tif,.tiff,.dng,.cr2,.nef,.arw">
+
+    <label for="enlace_externo">O pega un enlace de Drive/WeTransfer (bursts grandes)</label>
+    <input type="url" id="enlace_externo" name="enlace_externo" placeholder="https://...">
+
+    <button type="submit">Enviar</button>
+  </form>
+
+  <div id="resultado"></div>
+
+  <script>
+    document.getElementById('form-subida').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const div = document.getElementById('resultado');
+      div.className = '';
+      div.textContent = 'Enviando...';
+      div.style.display = 'block';
+
+      const datos = new FormData(e.target);
+      try {
+        const resp = await fetch('/subir', { method: 'POST', body: datos });
+        const json = await resp.json();
+        if (resp.ok) {
+          div.className = 'ok';
+          div.innerHTML = `Recibido. Sigue el estado en <a href="${json.url_estado}">${json.url_estado}</a>`;
+        } else {
+          div.className = 'error';
+          div.textContent = json.error || 'Error al enviar.';
+        }
+      } catch (err) {
+        div.className = 'error';
+        div.textContent = 'Error de red al enviar el formulario.';
+      }
+    });
+  </script>
+</body>
+</html>

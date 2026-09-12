@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Estado del trabajo — UppImagenScale</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; color: #1a1a1a; }
+    .estado { display: inline-block; padding: 0.3rem 0.8rem; border-radius: 999px; font-weight: 600; font-size: 0.85rem; }
+    .estado.listo { background: #dcfce7; color: #166534; }
+    .estado.error { background: #fee2e2; color: #991b1b; }
+    .estado.pendiente, .estado.reclamado, .estado.procesando { background: #fef3c7; color: #92400e; }
+    ul { padding-left: 1.2rem; }
+    a.descarga { display: inline-block; margin: 0.3rem 0; }
+  </style>
+</head>
+<body>
+  <h1>Estado de tu trabajo</h1>
+  <p>Referencia: <code>{{ trabajo.token_publico }}</code></p>
+  <p>Estado: <span class="estado {{ trabajo.estado }}">{{ trabajo.estado }}</span></p>
+
+  {% if trabajo.estado == 'error' %}
+    <p><strong>Detalle:</strong> {{ trabajo.error_msg }}</p>
+  {% endif %}
+
+  {% if trabajo.estado == 'listo' %}
+    <h2>Descargas</h2>
+    <ul>
+      {% for archivo in archivos %}
+        <li><a class="descarga" href="{{ url_for('publico.descargar', token=trabajo.token_publico, archivo_id=archivo.id) }}">{{ archivo.nombre }}</a></li>
+      {% endfor %}
+    </ul>
+  {% endif %}
+</body>
+</html>

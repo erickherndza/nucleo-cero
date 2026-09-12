@@ -1,0 +1,16 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+config.yaml
+worker/salidas/
+worker/entradas/
+worker/tmp/
+worker/logs/
+*.dng
+*.cr2
+*.nef
+*.arw
+.DS_Store
+.pytest_cache/

@@ -19,6 +19,7 @@ import numpy as np
 
 from nucleo import (
     cargar_gris_lineal,
+    error_relativo,
     error_rms,
     correlacion_spearman,
     reconstrucciones_bootstrap,
@@ -66,6 +67,7 @@ def medir_imagen(ruta: Path, rng: np.random.Generator) -> list[dict]:
                 "columna": x0 // TAM_REGION,
                 "tau": tau_incertidumbre(recons, y0, x0, TAM_REGION),
                 "error_rms": error_rms(region_media, region_verdad),
+                "error_relativo": error_relativo(region_media, region_verdad),
             }
         )
     return filas
@@ -98,23 +100,29 @@ def main() -> None:
         w.writerows(todas_las_filas)
 
     taus = np.array([r["tau"] for r in todas_las_filas])
-    errores = np.array([r["error_rms"] for r in todas_las_filas])
-    corr = correlacion_spearman(taus, errores)
+    errores_abs = np.array([r["error_rms"] for r in todas_las_filas])
+    errores_rel = np.array([r["error_relativo"] for r in todas_las_filas])
+    corr_abs = correlacion_spearman(taus, errores_abs)
+    corr = correlacion_spearman(taus, errores_rel)
 
     print(f"\n{len(todas_las_filas)} regiones medidas en {len(archivos)} imágenes. Resultados en {args.salida}")
-    print(f"Correlación de Spearman τ vs error real: {corr:.3f}")
+    print(f"Correlación τ vs error ABSOLUTO (referencia, ver avance-1.4/1.5): {corr_abs:+.3f}")
+    print(f"Correlación τ vs error RELATIVO (métrica de la puerta): {corr:+.3f}")
     print("VEREDICTO:", "🟢 VERDE" if corr >= CORRELACION_MINIMA_VERDE else "🔴 ROJO", f"(umbral: {CORRELACION_MINIMA_VERDE})")
 
     # estabilidad por imagen (METODO.md §3: "estable a través de tipos de contenido")
-    print("\nPor imagen:")
+    print("\nPor imagen (error relativo):")
+    estables = 0
     for archivo in archivos:
         filas_img = [r for r in todas_las_filas if r["archivo"] == archivo.name]
         if not filas_img:
             continue
         t = np.array([r["tau"] for r in filas_img])
-        e = np.array([r["error_rms"] for r in filas_img])
+        e = np.array([r["error_relativo"] for r in filas_img])
         c = correlacion_spearman(t, e)
+        estables += c >= CORRELACION_MINIMA_VERDE
         print(f"  {archivo.name}: corr={c:+.3f}  (n={len(filas_img)})")
+    print(f"\nImágenes con correlación >= {CORRELACION_MINIMA_VERDE}: {estables}/{len(archivos)}")
 
 
 if __name__ == "__main__":

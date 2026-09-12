@@ -109,6 +109,23 @@ def error_rms(region_estimado: np.ndarray, region_verdad: np.ndarray) -> float:
     return float(np.sqrt(np.mean((region_estimado - region_verdad) ** 2)))
 
 
+def error_relativo(region_estimado: np.ndarray, region_verdad: np.ndarray, eps: float = 1e-6) -> float:
+    """Error RMS dividido por la estructura real de la región (desviación
+    estándar de la verdad) — no un error absoluto.
+
+    Este fue el problema real detrás del rojo de avance-1.4/1.5, no τ ni el
+    algoritmo: τ (en cualquiera de sus dos versiones) es un COCIENTE
+    (normalizado por estructura local), y se estaba comparando contra un
+    error ABSOLUTO (no normalizado). Una región con mucho contraste real
+    tiene más rango de valores para equivocarse, así que su error absoluto
+    es mayor aunque la reconstrucción sea igual de buena en términos
+    relativos — comparar τ contra error_rms era comparar un cociente contra
+    una cantidad con unidades distintas. Con error relativo, la correlación
+    con tau_incertidumbre pasa de -0.84 a +0.82 sobre las mismas 640
+    regiones (ver avance-1.6.md)."""
+    return error_rms(region_estimado, region_verdad) / max(region_verdad.std(), eps)
+
+
 def _rango_de_valores(a: np.ndarray) -> np.ndarray:
     """Rango (posición al ordenar) de cada valor — ties poco probables con
     floats continuos, así que no hace falta el promedio de empates de

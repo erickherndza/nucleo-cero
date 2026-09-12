@@ -3,6 +3,7 @@ import numpy as np
 from nucleo import (
     correlacion_spearman,
     descomponer_rango_nucleo,
+    error_relativo,
     error_rms,
     reconstrucciones_bootstrap,
     tau_frecuencia,
@@ -79,6 +80,40 @@ def test_tau_incertidumbre_region_lisa_vs_texturada_con_verdad_conocida():
 def test_error_rms_cero_si_identico():
     a = np.random.default_rng(1).uniform(0, 1, size=(32, 32))
     assert error_rms(a, a) == 0.0
+
+
+def test_error_relativo_invariante_de_escala():
+    """El bug real detrás de avance-1.4/1.5: error_rms absoluto escala con
+    el contraste de la región, así que no es comparable entre una zona lisa
+    y una texturada. error_relativo, al dividir por la propia estructura de
+    la verdad, debe dar (aprox) el mismo valor si escalo la región entera
+    (verdad + un error proporcional) por una constante."""
+    rng = np.random.default_rng(9)
+    verdad = rng.uniform(0, 1, size=(32, 32))
+    error_abs = rng.normal(0, 0.02, size=(32, 32))
+    estimado = verdad + error_abs
+
+    verdad_x10 = verdad * 10
+    estimado_x10 = estimado * 10  # mismo error relativo, todo escalado x10
+
+    r1 = error_relativo(estimado, verdad)
+    r2 = error_relativo(estimado_x10, verdad_x10)
+    assert np.isclose(r1, r2, rtol=1e-6)
+
+
+def test_error_relativo_mayor_en_region_lisa_con_mismo_error_absoluto():
+    """Con el MISMO error absoluto, la región con menos estructura real
+    (más lisa) debe dar error_relativo más alto — es justo lo que
+    error_rms (sin normalizar) no podía distinguir."""
+    rng = np.random.default_rng(10)
+    error_abs = rng.normal(0, 0.02, size=(32, 32))
+
+    verdad_lisa = np.full((32, 32), 0.5)
+    verdad_texturada = np.linspace(0, 1, 32)[None, :].repeat(32, axis=0)
+
+    r_lisa = error_relativo(verdad_lisa + error_abs, verdad_lisa)
+    r_texturada = error_relativo(verdad_texturada + error_abs, verdad_texturada)
+    assert r_lisa > r_texturada
 
 
 def test_correlacion_spearman_perfecta():

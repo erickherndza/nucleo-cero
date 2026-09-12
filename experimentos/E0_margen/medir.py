@@ -85,6 +85,32 @@ def _suavizar(dB: np.ndarray, ventana: int) -> np.ndarray:
     return np.convolve(dB_relleno, kernel, mode="valid")
 
 
+BANDA_REFERENCIA = (0.05, 0.25)
+UMBRAL_DEPARTURE_DB = -3.0  # cuánto debe caer bajo la tendencia natural para contar como "corte extra"
+UMBRAL_PISO_DB = 3.0  # margen sobre el piso medido para decir "llegó al piso"
+ANCHO_SUAVE_MIN = 0.12
+ANCHO_MURO_MAX = 0.04
+
+
+def _tendencia_natural(freqs: np.ndarray, dB: np.ndarray, banda=BANDA_REFERENCIA) -> np.ndarray:
+    """Ajusta dB ~ a + b·log10(f) en una banda de referencia de baja
+    frecuencia, asumida libre de cualquier corte adicional — solo la caída
+    ~1/f^n que tiene CUALQUIER imagen natural. Devuelve esa tendencia
+    extrapolada a todo el rango de frecuencias.
+
+    Sin esto, comparar niveles absolutos de dB confunde la caída natural
+    (que por sí sola ya abarca casi todo el rango DC→Nyquist) con un corte
+    adicional real: toda imagen "parece" tener una transición ancha si el
+    punto de referencia es el nivel en continua (ver avance-1.1.md)."""
+    mask = (freqs >= banda[0]) & (freqs <= banda[1])
+    if mask.sum() < 5:
+        mask = freqs > 0
+    logf_banda = np.log10(freqs[mask])
+    b, a = np.polyfit(logf_banda, dB[mask], 1)
+    freqs_seguras = np.where(freqs > 0, freqs, freqs[freqs > 0].min())
+    return a + b * np.log10(freqs_seguras)
+
+
 def clasificar_corte(freqs: np.ndarray, potencia: np.ndarray) -> tuple[float, str]:
     """Clasifica la forma del corte espectral (METODO.md §3, tabla E0).
 
@@ -92,39 +118,44 @@ def clasificar_corte(freqs: np.ndarray, potencia: np.ndarray) -> tuple[float, st
     """
     dB = _db(potencia)
     dB_suave = _suavizar(dB, ventana=max(3, len(dB) // 40))
+    tendencia = _tendencia_natural(freqs, dB_suave)
+    residuo = dB_suave - tendencia  # ~0 mientras sigue la caída natural
 
-    baja = (freqs >= 0.02) & (freqs <= 0.10)
     alta = (freqs >= 0.85) & (freqs <= 1.0)
-    nivel_pico = np.median(dB_suave[baja]) if baja.any() else dB_suave[1]
-    nivel_piso = np.median(dB_suave[alta]) if alta.any() else dB_suave[-1]
+    piso_dB = np.median(dB_suave[alta]) if alta.any() else dB_suave[-1]
 
-    umbral_alto = nivel_pico - 3.0
-    umbral_bajo = nivel_piso + 3.0
+    zona = np.where(freqs > BANDA_REFERENCIA[1])[0]
+    if len(zona) == 0:
+        zona = np.arange(len(freqs))
 
-    idx_inicio = np.argmax(dB_suave <= umbral_alto) if np.any(dB_suave <= umbral_alto) else len(dB_suave) - 1
-    tramo = dB_suave[idx_inicio:]
-    bajo_en_tramo = np.where(tramo <= umbral_bajo)[0]
-    idx_fin = idx_inicio + bajo_en_tramo[0] if len(bajo_en_tramo) else len(dB_suave) - 1
+    en_piso = dB_suave[zona] <= piso_dB + UMBRAL_PISO_DB
+    idx_piso = zona[np.argmax(en_piso)] if en_piso.any() else zona[-1]
+    f_eff = freqs[idx_piso]
 
-    f_inicio = freqs[idx_inicio]
-    f_eff = freqs[idx_fin]
-    ancho_transicion = f_eff - f_inicio
+    se_aparta = residuo[zona] <= UMBRAL_DEPARTURE_DB
+    if se_aparta.any():
+        idx_departure = zona[np.argmax(se_aparta)]
+        f_departure = freqs[idx_departure]
+        ancho_transicion = f_eff - f_departure
+        if ancho_transicion >= ANCHO_SUAVE_MIN:
+            tipo = "suave"
+        elif ancho_transicion <= ANCHO_MURO_MAX:
+            tipo = "muro"
+        else:
+            tipo = "ambiguo"
+    else:
+        # nunca se aparta de su propia tendencia natural antes de llegar al
+        # piso: no hay corte adicional detectable, solo la caída natural.
+        tipo = "suave"
 
     # Energía plegada: repunte cerca de Nyquist por encima del mínimo previo.
+    # Se evalúa aparte porque es una firma distinta (no monótona), no un
+    # caso más de ancho de transición.
     zona_borde = freqs >= 0.95
     zona_previa = (freqs >= 0.70) & (freqs < 0.95)
-    plegado = False
     if zona_borde.any() and zona_previa.any():
-        plegado = np.max(dB_suave[zona_borde]) > np.min(dB_suave[zona_previa]) + 2.0
-
-    if plegado:
-        tipo = "plegado"
-    elif ancho_transicion >= 0.12:
-        tipo = "suave"
-    elif ancho_transicion <= 0.04:
-        tipo = "muro"
-    else:
-        tipo = "ambiguo"
+        if np.max(dB_suave[zona_borde]) > np.min(dB_suave[zona_previa]) + 2.0:
+            tipo = "plegado"
 
     return float(f_eff), tipo
 

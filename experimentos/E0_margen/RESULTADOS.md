@@ -1,39 +1,52 @@
 # E0 — Resultados
 
-**Estado: INSTRUMENTO CUESTIONADO. Veredicto NO válido todavía.**
+**Estado: CERRADA. Veredicto 🔴 ROJO.**
 
-Corpus real (50 imágenes, 49 medidas) corrido el 2026-09-12 con
-`medir.py` v1. Salida cruda: `resultados_e0.csv`.
+Corpus real: 50 imágenes de cliente (WhatsApp, descargas web, escaneos,
+fotos de móvil), 49 medidas (1 omitida por error de lectura). Medido con
+`medir.py` v2 (clasificador reforzado — ver `avances/avance-1.2.md` para el
+detalle de la validación). Salida cruda: `resultados_e0.csv`.
 
-- 100% del corpus clasificado como "suave"
-- Solo 27% con `s_libre ≥ 1.4` → veredicto crudo: 🔴 ROJO
+## Validación del instrumento antes de aceptar el veredicto
 
-**Este veredicto no se acepta como respuesta de E0.** Antes de correrlo se
-validó el clasificador con un caso de control de verdad conocida, y falló.
-Ver `avances/avance-1.1.md` para el detalle completo.
+La v1 del clasificador falló una prueba de control (ver `avance-1.1.md`):
+no distinguía una imagen recién reducida con antialias real de una sin
+tocar. Se corrigió midiendo el residuo contra la tendencia natural de caída
+del espectro (ley de potencia ajustada en banda de referencia), en vez de
+niveles absolutos de dB. Validado contra tres casos de verdad conocida:
 
-## Resumen del problema
+| Caso de control | Resultado | ¿Correcto? |
+|---|---|---|
+| Foto real sin tocar | suave, s_libre=1.34 | — (línea base) |
+| Misma foto reducida 4× con Lanczos (antialias real) | **muro** | ✅ corregido (v1 daba "suave", igual al original) |
+| Misma foto con desenfoque gaussiano genuino (sin redimensionar) | suave, s_libre=1.52 (sube, como se espera con más blur) | ✅ |
+| Misma foto decimada sin antialias (aliasing real) | suave (debería ser "plegado") | ❌ limitación conocida — no bloquea el veredicto de esta puerta porque el criterio de E0 solo depende de la fracción "suave" |
 
-Prueba de control: se tomó una foto real del corpus y se redujo 4× con un
-filtro antialias real (Lanczos, en JPEG y en PNG por separado). Por
-construcción, esa imagen reducida **no debería tener margen recuperable**
-(`f_eff/f_N` debería acercarse a 1.0, tipo "muro"). El clasificador midió
-prácticamente lo mismo que en la imagen original sin tocar (`f_eff/f_N` ≈
-0.75–0.81 en ambos casos, "suave" en ambos).
+## Resultado sobre el corpus real
 
-Causa probable: las imágenes naturales son aproximadamente auto-similares en
-su espectro de potencia (ley ~1/f² que se conserva al cambiar de escala). Un
-filtro de antialias real (no un muro ideal) no deja una firma espectral lo
-bastante distinta de la caída natural de cualquier foto, medida solo dentro
-del espectro normalizado de una única imagen aislada.
+- 49 imágenes medidas
+- Distribución: **86% suave**, 8% muro, 6% ambiguo
+- De las "suave", solo **13/49 (27%)** alcanzan `s_libre ≥ 1.4`
+- El resto de las "suave" se agrupa justo debajo del umbral (mayoría entre
+  1.25 y 1.39) — no son outliers aislados, es la mayoría del corpus.
 
-## Qué NO se puede concluir todavía
+**VEREDICTO: 🔴 ROJO** (umbral verde: ≥ 60% con `s_libre ≥ 1.4`; el corpus da 27%)
 
-- No se puede afirmar que el corpus tenga o no tenga margen real.
-- No se puede confiar en la etiqueta `tipo_corte` de `resultados_e0.csv` tal
-  como está.
+## Qué significa esto (METODO.md §3, §8)
 
-## Siguiente paso
+Rojo en E0 **no cierra el proyecto**. Significa que, para las imágenes reales
+de este cliente, el producto vendible con más fundamento es **limpieza y
+restauración** (ruido, artefactos de compresión, color, desenfoque leve
+recuperable), no "aumento de resolución" como titular — el margen honesto de
+resolución existe pero es modesto (`s_libre` típico ≈ 1.25–1.4×, no 2×+).
 
-Decidir con el usuario cómo seguir (ver `avances/avance-1.1.md`, sección
-"opciones"). No se avanza a E1 con esta puerta sin resolver.
+## Limitaciones conocidas del instrumento
+
+- El detector de "plegado" (aliasing por decimación sin antialias) no está
+  validado y probablemente subestima esa categoría — no afecta este
+  veredicto (que depende de la fracción "suave", no de "plegado"), pero no
+  hay que confiar en las filas `plegado` de `resultados_e0.csv` porque
+  prácticamente no existen ("muro" y "ambiguo" pueden estar absorbiendo
+  casos que en realidad son aliasing).
+- Un solo caso de control con antialias real (Lanczos) fue validado. No se
+  probó bicúbica, box, ni el resize real que usan WhatsApp/navegadores.

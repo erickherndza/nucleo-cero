@@ -5,6 +5,8 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# corpus real de clientes: nunca versionado (privacidad + peso)
+# imágenes reales de clientes/usuario: nunca versionadas (privacidad + peso)
 experimentos/E0_margen/corpus/*
 !experimentos/E0_margen/corpus/.gitkeep
+experimentos/E1_deconvolucion/fuente/*
+!experimentos/E1_deconvolucion/fuente/.gitkeep

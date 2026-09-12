@@ -1,27 +1,39 @@
 # E0 — Resultados
 
-**Estado: PENDIENTE.** Falta el corpus de 50 imágenes reales de clientes
-(WhatsApp, web, escaneos antiguos, fotos de móvil, capturas) en
-`experimentos/E0_margen/corpus/`.
+**Estado: INSTRUMENTO CUESTIONADO. Veredicto NO válido todavía.**
 
-Cómo correrlo una vez esté el corpus:
+Corpus real (50 imágenes, 49 medidas) corrido el 2026-09-12 con
+`medir.py` v1. Salida cruda: `resultados_e0.csv`.
 
-```
-source .venv/bin/activate
-python experimentos/E0_margen/medir.py experimentos/E0_margen/corpus/ --salida experimentos/E0_margen/resultados_e0.csv
-```
+- 100% del corpus clasificado como "suave"
+- Solo 27% con `s_libre ≥ 1.4` → veredicto crudo: 🔴 ROJO
 
-## Criterio de la puerta (METODO.md §3)
+**Este veredicto no se acepta como respuesta de E0.** Antes de correrlo se
+validó el clasificador con un caso de control de verdad conocida, y falló.
+Ver `avances/avance-1.1.md` para el detalle completo.
 
-- 🟢 Verde: ≥ 60% del corpus con corte suave y `s_libre ≥ 1.4`
-- 🔴 Rojo: mayoría con muro abrupto → el producto es limpieza/restauración, no
-  resolución (no cierra el proyecto, lo reposiciona)
+## Resumen del problema
 
-## Resultado
+Prueba de control: se tomó una foto real del corpus y se redujo 4× con un
+filtro antialias real (Lanczos, en JPEG y en PNG por separado). Por
+construcción, esa imagen reducida **no debería tener margen recuperable**
+(`f_eff/f_N` debería acercarse a 1.0, tipo "muro"). El clasificador midió
+prácticamente lo mismo que en la imagen original sin tocar (`f_eff/f_N` ≈
+0.75–0.81 en ambos casos, "suave" en ambos).
 
-_(completar a mano tras correr `medir.py` sobre el corpus real — no
-interpretar a favor si es ambiguo)_
+Causa probable: las imágenes naturales son aproximadamente auto-similares en
+su espectro de potencia (ley ~1/f² que se conserva al cambiar de escala). Un
+filtro de antialias real (no un muro ideal) no deja una firma espectral lo
+bastante distinta de la caída natural de cualquier foto, medida solo dentro
+del espectro normalizado de una única imagen aislada.
 
-- Imágenes medidas:
-- Fracción corte suave + s_libre ≥ 1.4:
-- Veredicto:
+## Qué NO se puede concluir todavía
+
+- No se puede afirmar que el corpus tenga o no tenga margen real.
+- No se puede confiar en la etiqueta `tipo_corte` de `resultados_e0.csv` tal
+  como está.
+
+## Siguiente paso
+
+Decidir con el usuario cómo seguir (ver `avances/avance-1.1.md`, sección
+"opciones"). No se avanza a E1 con esta puerta sin resolver.

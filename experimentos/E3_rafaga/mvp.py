@@ -43,6 +43,7 @@ PERFILES = {
 }
 LAMBDA_TV = 8.0
 LR_RECON = 0.03
+UMBRAL_DIVERSIDAD_FASE = 0.30  # v1.0 (retroalimentación del usuario, Colab): puerta preventiva
 
 
 @dataclass
@@ -141,9 +142,14 @@ def correr_validacion(ruta_imagen: Path, perfil: str, salida: Path) -> None:
 
     desplaz = [nt.theta_a_px(p, *observaciones[0].shape[-2:]) for p in poses_est]
     fases, div = nt.diversidad_de_fase(desplaz, cfg["factor"])
-    fases_ok = min(div) >= 0.35
+    fases_ok = min(div) >= UMBRAL_DIVERSIDAD_FASE
     print(f"\n[Diagnóstico] Diversidad de fase (x={div[0]:.2f}, y={div[1]:.2f}): "
           f"{'✓ repartidas' if fases_ok else '⚠ agrupadas — sin aporte de resolución'}")
+
+    if not fases_ok:
+        salida.mkdir(parents=True, exist_ok=True)
+        _abortar_por_fase(salida / f"{ruta_imagen.stem}_informe.md", ruta_imagen.name, div)
+        return
 
     sigma_0 = nt.estimar_sigma(observaciones[0])
     print(f"\n[Ruido] sigma_n inicial = {sigma_0:.5f}")
@@ -190,9 +196,14 @@ def correr_produccion(rutas: list[Path], perfil: str, salida: Path) -> None:
 
     desplaz = [nt.theta_a_px(p, *observaciones[0].shape[-2:]) for p in poses]
     fases, div = nt.diversidad_de_fase(desplaz, cfg["factor"])
-    fases_ok = min(div) >= 0.35
+    fases_ok = min(div) >= UMBRAL_DIVERSIDAD_FASE
     print(f"[Diagnóstico] Diversidad de fase (x={div[0]:.2f}, y={div[1]:.2f}): "
           f"{'✓ repartidas' if fases_ok else '⚠ agrupadas — sin aporte de resolución, solo baja ruido'}")
+
+    if not fases_ok:
+        salida.mkdir(parents=True, exist_ok=True)
+        _abortar_por_fase(salida / f"{rutas[0].stem}_informe.md", rutas[0].name, div)
+        return
 
     sigma_0 = nt.estimar_sigma(observaciones[0])
     print(f"[Ruido] sigma_n inicial = {sigma_0:.5f}")
@@ -234,6 +245,42 @@ def _guardar_comparacion(salida, nombre, bicubico, x_rec, x_verdad, tau):
     # imagen reconstruida sola, para entrega
     import torchvision.transforms.functional as TF
     TF.to_pil_image(nt.lineal_a_srgb(x_rec).squeeze(0).cpu()).save(salida / f"{nombre}_reconstruida.png")
+
+
+def _abortar_por_fase(ruta_md, nombre_entrada, div):
+    """Puerta preventiva (retroalimentación del usuario, Colab, 2026-09-12):
+    si la diversidad de fase está por debajo del umbral, no tiene sentido
+    gastar minutos de optimización — la ráfaga no puede aportar resolución
+    real, solo reduciría ruido (raíz de K). METODO.md §3 (E3) pide decir
+    esto, no callarlo; abortar antes es más honesto que reconstruir y
+    reportar un certificado que de todas formas habría que descartar."""
+    print(f"\n❌ ABORTE PREVENTIVO: diversidad de fase por debajo del umbral ({UMBRAL_DIVERSIDAD_FASE}).")
+    print("   Esta ráfaga no puede aportar resolución real — los frames caen en fases muy parecidas.")
+    print("   No se ejecuta la reconstrucción (habría sido tiempo perdido).")
+    ruta_md.write_text(
+        "\n".join(
+            [
+                f"# Informe de entrega — {nombre_entrada}",
+                "",
+                "## ❌ Ráfaga rechazada — diversidad de fase insuficiente",
+                "",
+                f"- Diversidad de fase: x={div[0]:.2f}, y={div[1]:.2f} "
+                f"(umbral: {UMBRAL_DIVERSIDAD_FASE})",
+                "- Los frames de esta ráfaga caen en fases sub-píxel demasiado parecidas "
+                "entre sí respecto a la retícula de baja resolución.",
+                "- Consecuencia: no hay aliasing que desplegar. Una reconstrucción aquí "
+                "solo reduciría ruido (ganancia ≈ √K), no aportaría resolución real.",
+                "- No se ejecutó la optimización — habría sido tiempo de cómputo sin "
+                "beneficio, y el certificado resultante habría sido descartable de todas "
+                "formas (METODO.md §3, E3).",
+                "",
+                "**Recomendación:** repetir la toma con más variación natural entre "
+                "disparos (no fijar la cámara en un trípode/apoyo perfectamente rígido), "
+                "o procesar como imagen única en vez de ráfaga.",
+            ]
+        )
+        + "\n"
+    )
 
 
 def _escribir_informe(ruta_md, nombre_entrada, perfil, cfg, cert: Certificado, tiempo, e1: dict | None):

@@ -194,10 +194,21 @@ def pesos_tukey(residuo, c):
 # ----------------------------------------------------------------------------
 
 
-def tv(x):
+def tv(x, epsilon=1e-3):
+    """Charbonnier-TV. El valor de epsilon importa mucho, no es un detalle
+    numérico: con epsilon≈1e-8 (equivalente a TV/L1 puro) el regularizador
+    favorece soluciones por tramos constantes — a MAX_LADO=2400 esto se vio
+    como el efecto "acuarela"/staircase (retroalimentación del usuario,
+    notebook nucleo_cero.ipynb, celda 12: LAMBDA_TV=8.0, epsilon chico,
+    2400px → acuarela). Subir epsilon a 1e-3 (celda 13 del mismo notebook)
+    extiende el régimen cuadrático (más parecido a L2, no favorece
+    aplanar) sobre un rango más ancho de gradientes típicos de textura
+    real, y fue justo lo que eliminó el efecto acuarela — no el cambio de
+    L1 a Charbonnier en sí (eso ya lo teníamos desde avance-1.8) sino este
+    valor de epsilon en particular."""
     dx = x[:, :, :, 1:] - x[:, :, :, :-1]
     dy = x[:, :, 1:, :] - x[:, :, :-1, :]
-    return torch.sqrt(dx**2 + 1e-8).mean() + torch.sqrt(dy**2 + 1e-8).mean()
+    return torch.sqrt(dx**2 + epsilon**2).mean() + torch.sqrt(dy**2 + epsilon**2).mean()
 
 
 # ----------------------------------------------------------------------------

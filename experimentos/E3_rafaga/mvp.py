@@ -41,7 +41,7 @@ PERFILES = {
     "rapido": dict(factor=2, k_frames=4, sigma_psf=1.1, ruido_sint=0.004, iters=100, max_lado=256, escala_vueltas=0.35),
     "completo": dict(factor=2, k_frames=6, sigma_psf=1.1, ruido_sint=0.004, iters=300, max_lado=512, escala_vueltas=1.0),
 }
-LAMBDA_TV = 8.0
+LAMBDA_TV = 6.0  # ajustado junto con epsilon=1e-3 de Charbonnier-TV (ver nucleo_torch.py:tv)
 LR_RECON = 0.03
 UMBRAL_DIVERSIDAD_FASE = 0.30  # v1.0 (retroalimentación del usuario, Colab): puerta preventiva
 

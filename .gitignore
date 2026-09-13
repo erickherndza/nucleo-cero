@@ -3,6 +3,7 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 .venv/
+.venv312/
 *.egg-info/
 
 # imágenes reales de clientes/usuario: nunca versionadas (privacidad + peso)
@@ -10,3 +11,6 @@ experimentos/E0_margen/corpus/*
 !experimentos/E0_margen/corpus/.gitkeep
 experimentos/E1_deconvolucion/fuente/*
 !experimentos/E1_deconvolucion/fuente/.gitkeep
+
+# salidas generadas (regenerables con el MVP, no hace falta versionarlas)
+experimentos/E3_rafaga/salida/

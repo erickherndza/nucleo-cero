@@ -1,0 +1,13 @@
+# venv dedicado: torch no tiene wheel para Python 3.14 (la versión del
+# resto del proyecto). Crear con Python 3.12:
+#   /usr/local/bin/python3.12 -m venv experimentos/E3_rafaga/.venv312
+#   source experimentos/E3_rafaga/.venv312/bin/activate
+#   pip install -r experimentos/E3_rafaga/requirements.txt
+#
+# numpy<2 es necesario: torch 2.2.2 está compilado contra la ABI de
+# NumPy 1.x y falla al importar con NumPy 2.x instalado.
+numpy<2
+torch==2.2.2
+torchvision==0.17.2
+matplotlib
+pillow

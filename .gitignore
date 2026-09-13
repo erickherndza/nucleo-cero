@@ -11,6 +11,8 @@ experimentos/E0_margen/corpus/*
 !experimentos/E0_margen/corpus/.gitkeep
 experimentos/E1_deconvolucion/fuente/*
 !experimentos/E1_deconvolucion/fuente/.gitkeep
+experimentos/E3_rafaga/rafaga_real/*
+!experimentos/E3_rafaga/rafaga_real/.gitkeep
 
 # salidas generadas (regenerables con el MVP, no hace falta versionarlas)
 experimentos/E3_rafaga/salida/

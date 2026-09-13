@@ -57,7 +57,17 @@ class Certificado:
     err_alineacion_px: float | None = None  # solo validación
 
 
-def _nivel_servicio(tau: float) -> str:
+UMBRAL_CONSISTENCIA = 1.5  # mismo umbral que ya se usa para el símbolo ✓/✗ del certificado
+
+
+def _nivel_servicio(tau: float, ratio_residuo_ruido: float) -> str:
+    """El nivel de servicio solo tiene sentido si el modelo ajustó bien a
+    los datos. τ bajo con un ajuste inconsistente no es "alta confianza":
+    es que el certificado no puede responder por el resultado (avance-1.10
+    — ráfaga real de sujetos vivos, ratio=3.07, tau seguía diciendo
+    "Comercial" como si nada, sin mirar la inconsistencia)."""
+    if ratio_residuo_ruido >= UMBRAL_CONSISTENCIA:
+        return "NO CONFIABLE — el modelo no ajusta bien a estos datos (ver ratio residuo/ruido)"
     if tau <= 0.01:
         return "Forense (<=0.01)"
     if tau <= 0.05:
@@ -141,7 +151,7 @@ def correr_validacion(ruta_imagen: Path, perfil: str, salida: Path) -> None:
         observaciones, poses_est, k1d, cfg, sigma_0, cfg["iters"], LAMBDA_TV, verbose=True
     )
 
-    cert = Certificado(rmse, ratio, tau, _nivel_servicio(tau), sigma_n, fases_ok, tuple(div), err_medio)
+    cert = Certificado(rmse, ratio, tau, _nivel_servicio(tau, ratio), sigma_n, fases_ok, tuple(div), err_medio)
 
     import torchvision.transforms.functional as TF
 
@@ -189,7 +199,7 @@ def correr_produccion(rutas: list[Path], perfil: str, salida: Path) -> None:
     x_rec, sigma_n, rmse, ratio, tau = _reconstruir_y_certificar(
         observaciones, poses, k1d, cfg, sigma_0, cfg["iters"], LAMBDA_TV, verbose=True
     )
-    cert = Certificado(rmse, ratio, tau, _nivel_servicio(tau), sigma_n, fases_ok, tuple(div))
+    cert = Certificado(rmse, ratio, tau, _nivel_servicio(tau, ratio), sigma_n, fases_ok, tuple(div))
 
     import torchvision.transforms.functional as TF
     bicubico = TF.resize(

@@ -1,92 +1,82 @@
-# CLAUDE.md — Método de Recuperación Certificada (nucleo-cero)
+# CLAUDE.md — nucleo-cero (mejora de fotos de WhatsApp sin inventar caras)
 
-## Regla no negociable
-Prohibido cualquier prior generativo aprendido (GAN, difusión, redes que
-sinteticen píxeles). El núcleo se rellena por capas 0-3 en orden de
-verificabilidad. No existe capa 4.
+## Qué es esto ahora (actualizado 2026-09-24)
 
-  capa 0  restricciones físicas (no-negatividad, soporte, rango)   coste τ = 0
-  capa 1  deconvolución hasta el límite de ruido                   coste τ ≈ 0
-  capa 2  mediciones adicionales (ráfaga, recurrencia interna)     ENCOGEN el núcleo
-  capa 3  regularización conservadora (TV)                         coste τ > 0, medido
+nucleo-cero pasó de ser el "Método de Recuperación Certificada" (capas 0-3,
+sin priors generativos) a ser un pipeline de mejora de fotos que **sí** usa
+modelos generativos preentrenados: Real-ESRGAN para el fondo y GFPGAN /
+CodeFormer para caras, con verificación de identidad SFace para descartar
+restauraciones que cambiaron demasiado a la persona.
 
-PyTorch (`experimentos/E3_rafaga/`) se usa como motor de optimización
-diferenciable sobre el modelo clásico, NO como red generativa — no hay
-pesos preentrenados ni aprendizaje de datos externos. No confundir "usa
-una librería de deep learning" con "rompe la regla no negociable"; lo que
-importa es si algo aprendido de fuera rellena información (prohibido).
+El proyecto anterior (experimentos E0-E3, `METODO.md`, los avances 1.0-1.12,
+`nucleo_cero.ipynb` original de 16MB) quedó archivado sin borrar en `old/`
+— sigue ahí por si hace falta consultarlo, pero ya no es el método activo
+ni las puertas E0-E3 aplican a lo que hay en la raíz.
 
-## Esto es un programa experimental, no un plan de construcción
-Cada etapa tiene una puerta con criterio verde y criterio rojo, definidos en
-METODO.md §3. NO avanzar de etapa con la puerta en rojo. Si un resultado es
-ambiguo, decirlo en vez de interpretarlo a favor.
+## Archivos clave
 
-Código de experimentos/ puede ser sucio y directo. Código de metodo/ no: ahí
-solo entra lo que ya pasó su puerta. **Ahora mismo `metodo/` no existe
-todavía** — nada ha pasado su puerta sin matices (ver estado abajo).
+- `nucleo_cero.ipynb` — notebook para **Google Colab** (Entorno de
+  ejecución → Cambiar tipo → **GPU T4**). Es el pipeline en sí.
+- `upscale.md` — misma fuente que el notebook, en Markdown con explicación
+  de cada celda, tabla de resultados medidos, comparación con Krea 2
+  Identity Edit y referencia completa de parámetros. Si el notebook y este
+  archivo alguna vez difieren, `upscale.md` es más fácil de diffear/leer.
+- `imagenes mejoradas/`, `imagenes-demo/` — fotos de prueba usadas para
+  medir el pipeline (PSNR/SSIM/similitud de identidad).
+- `old/` — proyecto clásico archivado (no activo).
 
-## Estado actual (verificado en esta sesión, no asumir el de documentos previos)
+## Cómo funciona el pipeline
 
-| Puerta | Estado | Detalle |
-|---|---|---|
-| **E0** — ¿hay margen real? | 🔴 **CERRADA, rojo** | avance-1.2: 27% del corpus con corte suave + s_libre≥1.4 (umbral 60%). No cierra el proyecto — reposiciona el producto hacia limpieza/restauración, no "aumento de resolución" (METODO.md §8). |
-| **E1** — ¿deconvolución llega al límite? | 🟡 Parcial | Ventaja sobre bicúbica confirmada dos veces: numpy/RL (avance-1.3, +3.47dB) y torch/ráfaga (avance-1.8-1.12, +2.6 a +4.2dB). Ancho de banda vs. límite teórico sin resolver en la versión numpy (avance-1.3, `f_max_teorico` mal calibrado). Solo probado con PSF conocida, no estimada (falta E1-b). |
-| **E2** — ¿el certificado predice el error? | 🟢 **CERRADA, verde** (una versión de τ) | avance-1.6: τ por sensibilidad al ruido (bootstrap, numpy) vs. error RELATIVO: +0.82 de correlación, 9/10 imágenes ≥0.6. **Ojo**: esta τ es DISTINTA de `tau_nucleo` del pipeline torch (diferencia con/sin TV) — esa nunca se validó por región contra error real, sigue abierta. |
-| **E3** — ¿la ráfaga aporta resolución real? | 🟢 Verde en validación, con matices en producción | avance-1.8-1.12: modo validación (ráfaga sintética) en verde consistente. Modo producción con ráfaga real (avance-1.10): el certificado detectó inconsistencia real (sujetos vivos, no escena rígida) — el sistema funcionó bien al no ocultarlo, pero no es un "verde" sin condiciones. |
+```
+foto WhatsApp ─┬─► Real-ESRGAN ×4 → reducir a 1024 px ──────► FONDO (limpio)
+               ├─► bicúbica + enfoque ────────────────────► bajo cada CARA (fiel)
+               └─► YuNet detecta caras ─► alinear 512×512 desde la original
+                        └─► GFPGAN restaura ─► mezcla 50 % ─► ¿SFace ≥ 0.80?
+                                                  sí → se pega · no → queda la fiel
+```
 
-Hay **dos bases de código paralelas**: `experimentos/E0_margen`,
-`E1_deconvolucion`, `E2_calibracion` (numpy puro, Python 3.14, `.venv/` en
-la raíz) y `experimentos/E3_rafaga` (PyTorch, Python 3.12, venv dedicado
-`.venv312/` — torch no tiene wheel para 3.14). Tienen definiciones de τ
-distintas; no asumir que un hallazgo de una aplica a la otra sin verificar.
+Las caras se alinean y recortan siempre desde la foto **original**, nunca
+desde la versión ya ampliada por ESRGAN (evita restaurar sobre información
+ya inventada). Caras < 64 px no se restauran (muy poca información real
+para verificar nada): quedan con la versión fiel bicúbica.
 
-## Invariantes técnicos verificados en banco (no re-descubrir)
-- Todo el cómputo en LUZ LINEAL (deshacer gamma al cargar, reaplicar al guardar).
-- RAW sin auto-brillo, sin reducción de ruido, sin nitidez, gamma lineal
-  (requisito de la especificación; ningún pipeline actual carga RAW todavía).
-- UN SOLO operador directo (`A = D·H·W_k`) para síntesis y reconstrucción.
-  Si difieren, se resuelve `A2·x = A1·x_real`: sesgo sistemático que no se
-  va con más iteraciones.
-- La pose que estima el alineador debe ser la DIRECTA (deforma la
-  referencia hacia el frame k, no al revés). Estimarla al revés duplica el
-  error de registro — síntoma: error de alineación ≈2× el desplazamiento real.
-- Optimización iterativa (Richardson-Lucy o Adam) necesita parada por
-  PRINCIPIO DE DISCREPANCIA (Morozov) — frenar cuando el residuo llega al
-  nivel de ruido conocido, NO cuando "deja de bajar". Sin esto, RL empeora
-  el resultado real aunque el residuo interno siga mejorando (avance-1.3).
-- Todo bucle con Adam lleva decaimiento del paso (coseno) y reporta su
-  deriva final. Con paso fijo orbita el óptimo e infla τ sin mejorar
-  fidelidad — síntoma: la pérdida deja de bajar y empieza a subir.
-- Charbonnier-TV: el `epsilon` importa, no es un detalle numérico.
-  `epsilon≈1e-8` (≈ L1 puro) produce efecto acuarela/staircase a
-  resoluciones grandes con pocos frames. `epsilon=1e-3` (con `LAMBDA_TV`
-  más bajo, 6.0 en vez de 8.0) lo evita, y mejora el resultado en general,
-  no solo a resoluciones grandes (avance-1.12).
-- Puerta de fase preventiva: abortar la reconstrucción ANTES de optimizar
-  si diversidad de fase < 0.30 — no basta con advertir y seguir
-  (avance-1.11).
-- τ debe compararse contra error de la MISMA normalización. Comparar un τ
-  normalizado (cociente) contra error RMS absoluto da correlación
-  invertida — no porque τ esté mal, sino porque las unidades no coinciden
-  (avance-1.6).
-- Procesamiento por tiles: objetivo <400MB de RAM con cualquier entrada.
-  La especificación lo exige; ningún pipeline actual (numpy ni torch) lo
-  implementa todavía.
-- Sin GPU en local (MacBook Pro 2015 Intel, 8GB). Sin Docker para el
-  pipeline. El pipeline torch corre en CPU local — ~41x más lento que GPU
-  de Colab (avance-1.8); usar el perfil `rapido` de `mvp.py` para iterar,
-  no el `completo`, salvo que se acepte esperar minutos u horas.
-- Tras un rename de carpeta, los `activate` de los venvs quedan rotos
-  (ruta absoluta grabada). Invocar el binario del venv directamente por
-  ruta en vez de `source activate` (avance-1.11).
+## Invariantes verificados (no re-descubrir)
 
-## Las dos métricas acompañan toda salida
-consistencia: ‖D·H·x̂ − y‖ ≈ ‖ruido‖
-τ:            ‖x_núcleo‖ / ‖x_rango‖
-La consistencia sola NO basta: un generativo con proyección la aprueba.
+- **Verificación de identidad no es opcional**: cada cara restaurada se
+  compara (SFace, similitud coseno) contra la cara original. Si la
+  similitud cae bajo `umbral_identidad` (0.80 por defecto), se descarta la
+  restauración y queda la versión fiel — no hay forma de que una cara
+  "cambiada" pase sin que el reporte lo marque.
+- **`banda_transicion`** (0.10 por defecto) evita el salto binario feo en
+  fotos grupales: en la franja justo bajo el umbral, la mezcla se reduce
+  proporcionalmente en vez de aceptar/rechazar todo o nada. Con
+  `banda_transicion=0` se recupera el comportamiento binario antiguo.
+- **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
+  defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
+  default a CodeFormer para clientes que pagan.
+- Real-ESRGAN (BSD-3) y GFPGAN (Apache 2.0) sí permiten uso comercial;
+  YuNet/SFace de OpenCV Zoo también (Apache 2.0 / MIT).
+- Sin GPU el pipeline corre en CPU (~2 min/foto). Con GPU T4 de Colab
+  (gratuita) debería bajar a segundos.
+- **Lectura honesta de resultados** (medida, no asumida): en fidelidad de
+  píxeles (PSNR) la bicúbica + enfoque sigue ganando siempre — la IA limpia
+  ruido y artefactos, se ve mejor, pero no es más exacta. En caras grandes
+  (>~100px) el pipeline conserva identidad igual o mejor que Photoshop y se
+  ve más limpio. En caras pequeñas la IA cambia más la identidad: por eso
+  existen `cara_minima` y `umbral_identidad`. Ver `upscale.md` para la
+  tabla completa.
+- No hay Docker ni entorno local fijo para este pipeline: corre en Colab.
+  `.venv/` y `.pytest_cache/` en la raíz son restos del proyecto clásico
+  archivado en `old/` y no hacen falta para este notebook.
 
-## Debug
-Reproducir → Aislar → Hipótesis → Verificar → Fix mínimo.
+## Las dos métricas que ya NO aplican aquí (sí aplicaban en `old/`)
+
+`old/CLAUDE.md` documentaba consistencia + τ como certificado obligatorio
+de todo resultado. Este pipeline no las produce: su única señal de
+confianza es la similitud SFace por cara, comparada contra un umbral fijo.
+No presentar salidas de este pipeline como si tuvieran las garantías del
+método certificado anterior.
 
 ## Convenciones
+
 Código y comentarios en español.

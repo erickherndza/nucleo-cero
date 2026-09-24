@@ -6,13 +6,20 @@ __pycache__/
 .venv312/
 *.egg-info/
 
-# imágenes reales de clientes/usuario: nunca versionadas (privacidad + peso)
-experimentos/E0_margen/corpus/*
-!experimentos/E0_margen/corpus/.gitkeep
-experimentos/E1_deconvolucion/fuente/*
-!experimentos/E1_deconvolucion/fuente/.gitkeep
-experimentos/E3_rafaga/rafaga_real/*
-!experimentos/E3_rafaga/rafaga_real/.gitkeep
+# pesos descargados por la Celda 1 del notebook (cientos de MB, se re-descargan solos)
+weights/
 
-# salidas generadas (regenerables con el MVP, no hace falta versionarlas)
-experimentos/E3_rafaga/salida/
+# salidas generadas por mejorar_foto() (regenerables, no hace falta versionarlas)
+salidas/
+
+# old/ — proyecto clásico archivado: imágenes reales de clientes/usuario,
+# nunca versionadas (privacidad + peso)
+old/experimentos/E0_margen/corpus/*
+!old/experimentos/E0_margen/corpus/.gitkeep
+old/experimentos/E1_deconvolucion/fuente/*
+!old/experimentos/E1_deconvolucion/fuente/.gitkeep
+old/experimentos/E3_rafaga/rafaga_real/*
+!old/experimentos/E3_rafaga/rafaga_real/.gitkeep
+
+# old/ — salidas generadas del pipeline torch (regenerables)
+old/experimentos/E3_rafaga/salida/

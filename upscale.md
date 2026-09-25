@@ -247,6 +247,7 @@ def mejorar_foto(
     ancho=None,                # ancho final; None = automático (ver referencia_ancho abajo)
     alto=None,                # si das ancho Y alto, se fuerza ese tamaño exacto
     usar_esrgan=True,         # False = solo base Photoshop + caras
+    fondo_clasico=False,      # con usar_esrgan=False: fondo = deconvolucion_clasica() en vez de bicúbica+enfoque
     restaurar_caras=True,
     proteger_caras=True,      # bajo las caras usa bicúbica (fiel) en vez de ESRGAN
     restaurador='gfpgan',     # 'codeformer' (licencia NO comercial) o 'gfpgan' (Apache 2.0)
@@ -276,6 +277,9 @@ def mejorar_foto(
         x4 = realesrgan_x4(img)
         fondo = cv2.resize(x4, size, interpolation=cv2.INTER_AREA)
         log('✓ Real-ESRGAN ×4 → reducido al tamaño final')
+    elif fondo_clasico:
+        fondo = deconvolucion_clasica(img, ancho, alto)
+        log('✓ Fondo clásico (sin ruido JPEG + deconvolución, sin IA)')
     else:
         fondo = base.copy()
 
@@ -396,23 +400,35 @@ def prueba_con_referencia(ruta_buena, factor=1.6, calidad=35, desenfoque=0.8, **
     return filas, gt, base, salida
 
 # ─── Alternativa 100% clásica: deconvolución (sin IA, sin pesos preentrenados) ─
-def deconvolucion_clasica(img_bgr, ancho=None, alto=None, psf_sigma=1.5, iteraciones=15, sharpen_radius=1.5, sharpen_amount=1.0):
-    """Escala (bicúbica) + deconvoluciona (Richardson-Lucy) + afila (unsharp mask)."""
+def deconvolucion_clasica(img_bgr, ancho=None, alto=None, reduccion_ruido=3, psf_sigma=1.2,
+                          iteraciones=5, sharpen_radius=1.0, sharpen_amount=0.3, pad=24):
+    """Quita ruido JPEG → escala (bicúbica) → Richardson-Lucy + unsharp solo en luminancia.
+
+    Medido contra el original real (foto demo degradada como WhatsApp, JPEG q35):
+    bicúbica 31.38 dB · bicúbica+enfoque 31.36 · versión anterior 24.31 · esta 31.53.
+    - reduccion_ruido: NL-means antes de ampliar; sin esto se amplifican los bloques JPEG.
+    - pad reflect: sin relleno, Richardson-Lucy deja un marco oscuro en el borde.
+    - solo luminancia (Y de YCrCb): enfocar RGB por canal crea halos de color.
+    - pocas iteraciones / amount bajo: más de eso vuelve a producir halos y grano.
+    """
     from skimage.restoration import richardson_lucy
     from skimage.filters import unsharp_mask
     h0, w0 = img_bgr.shape[:2]
     ancho = ancho if ancho is not None else (int(round(w0 * 2)) if w0 > 1024 else 1024)
     alto = alto if alto is not None else int(round(h0 * ancho / w0))
-    up = cv2.resize(img_bgr, (ancho, alto), interpolation=cv2.INTER_CUBIC)
+    x = img_bgr
+    if reduccion_ruido:
+        x = cv2.fastNlMeansDenoisingColored(x, None, reduccion_ruido, reduccion_ruido, 5, 15)
+    up = cv2.resize(x, (ancho, alto), interpolation=cv2.INTER_CUBIC)
+    ycc = cv2.cvtColor(up, cv2.COLOR_BGR2YCrCb).astype(np.float64) / 255.0
     tam = int(psf_sigma * 6) | 1
     k = cv2.getGaussianKernel(tam, psf_sigma)
     psf = k @ k.T
-    img_float = up.astype(np.float64) / 255.0
-    canales = [richardson_lucy(img_float[:, :, c], psf, num_iter=iteraciones, clip=True) for c in range(3)]
-    deconv = np.clip(np.stack(canales, axis=-1), 0, 1)
-    afilada = unsharp_mask(deconv, radius=sharpen_radius, amount=sharpen_amount, channel_axis=-1)
-    return (np.clip(afilada, 0, 1) * 255).astype(np.uint8)
-
+    y = np.pad(ycc[:, :, 0], pad, mode='reflect')
+    y = richardson_lucy(y, psf, num_iter=iteraciones, clip=True)[pad:-pad, pad:-pad]
+    y = unsharp_mask(y, radius=sharpen_radius, amount=sharpen_amount)
+    ycc[:, :, 0] = np.clip(y, 0, 1)
+    return cv2.cvtColor((ycc * 255).round().astype(np.uint8), cv2.COLOR_YCrCb2BGR)
 ```
 
 
@@ -429,9 +445,9 @@ from google.colab import files
 from IPython.display import display, Image as IPImage
 import nucleo; import importlib; importlib.reload(nucleo)
 
-CONFIG_SUELTA = dict(usar_esrgan=False, restaurador='gfpgan', mezcla=0.5, cara_minima=64, umbral_identidad=0.80, proteger_caras=True)
+CONFIG_SUELTA = dict(usar_esrgan=False, fondo_clasico=True, restaurador='gfpgan', mezcla=0.5, cara_minima=64, umbral_identidad=0.80, proteger_caras=True)
 CARPETA_SALIDA_SUELTA = 'salidas_sueltas'
-os.makedirs(CARPETA_SALIDA_SUELTA, exist_ok=True)
+shutil.rmtree(CARPETA_SALIDA_SUELTA, ignore_errors=True); os.makedirs(CARPETA_SALIDA_SUELTA, exist_ok=True)
 
 subidas = files.upload()
 for nombre in subidas:
@@ -458,8 +474,9 @@ for nombre in subidas:
   print(f'\n━━━━━━━━ {nombre} (clásico) ━━━━━━━━')
   img = nucleo.leer_imagen(nombre)
   resultado = nucleo.deconvolucion_clasica(img)
-  base, ext = os.path.splitext(nombre)
-  ruta_salida = os.path.join(CARPETA_SALIDA_SUELTA, f'{base}_clasica{ext}')
+  base = os.path.splitext(nombre)[0]
+  # siempre PNG: la extensión subida puede no ser escribible (p. ej. .raw de WhatsApp)
+  ruta_salida = os.path.join(CARPETA_SALIDA_SUELTA, f'{base}_clasica.png')
   cv2.imwrite(ruta_salida, resultado)
   display(IPImage(ruta_salida, width=1000))
 ```

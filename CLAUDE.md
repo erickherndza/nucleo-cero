@@ -86,6 +86,19 @@ por cara", "Problemas comunes" y "Licencias".
   `CONFIG_SUELTA` dentro de la Celda 3. No asumir que Real-ESRGAN siempre
   mejora el fondo sin verificar la imagen completa (el efecto no se nota
   en miniaturas, solo a resolución real).
+- **`unsharp_mask` de scikit-image necesita `channel_axis=2`, no `-1`**: con
+  eje negativo `slice_at_axis` corta filas en vez de canales y el resto del
+  array queda sin inicializar → `deconvolucion_clasica()` devolvía una foto
+  negra/basura (confirmado en skimage 0.25.2 y 0.26.0, fix 2026-09-25).
+- **`deconvolucion_clasica()` v2 (2026-09-25)**: la versión anterior (RL 15
+  iteraciones + unsharp 1.0 en RGB) distorsionaba: 24.31 dB contra 31.38 de
+  una bicúbica pura (foto demo degradada ×1/1.6, JPEG q35). Tenía marco
+  oscuro (RL sin relleno), halos y ruido JPEG amplificado. La v2 quita ruido
+  (NL-means h=3) → bicúbica → RL 5 iteraciones con pad reflect + unsharp
+  0.3, solo en luminancia: 31.53 dB / SSIM 0.8827, la única variante medida
+  que supera a la bicúbica. Más iteraciones o más `amount` bajan el PSNR.
+  `fondo_clasico=True` (en `CONFIG_SUELTA`) la usa como fondo de
+  `mejorar_foto()` cuando `usar_esrgan=False`.
 - **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
   defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
   default a CodeFormer para clientes que pagan.

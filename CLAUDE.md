@@ -86,6 +86,10 @@ por cara", "Problemas comunes" y "Licencias".
   `CONFIG_SUELTA` dentro de la Celda 3. No asumir que Real-ESRGAN siempre
   mejora el fondo sin verificar la imagen completa (el efecto no se nota
   en miniaturas, solo a resolución real).
+- **`unsharp_mask` de scikit-image necesita `channel_axis=2`, no `-1`**: con
+  eje negativo `slice_at_axis` corta filas en vez de canales y el resto del
+  array queda sin inicializar → `deconvolucion_clasica()` devolvía una foto
+  negra/basura (confirmado en skimage 0.25.2 y 0.26.0, fix 2026-09-25).
 - **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
   defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
   default a CodeFormer para clientes que pagan.

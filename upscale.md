@@ -410,7 +410,7 @@ def deconvolucion_clasica(img_bgr, ancho=None, alto=None, psf_sigma=1.5, iteraci
     img_float = up.astype(np.float64) / 255.0
     canales = [richardson_lucy(img_float[:, :, c], psf, num_iter=iteraciones, clip=True) for c in range(3)]
     deconv = np.clip(np.stack(canales, axis=-1), 0, 1)
-    afilada = unsharp_mask(deconv, radius=sharpen_radius, amount=sharpen_amount, channel_axis=-1)
+    afilada = unsharp_mask(deconv, radius=sharpen_radius, amount=sharpen_amount, channel_axis=2)  # 2, no -1: skimage corta mal con eje negativo
     return (np.clip(afilada, 0, 1) * 255).astype(np.uint8)
 
 ```

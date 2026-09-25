@@ -307,7 +307,7 @@ def mejorar_foto(
         mask = cv2.warpAffine(elipse, Mi, size)[..., None]
 
         # 2a) Proteger: bajo cada cara va la versión fiel (bicúbica), no la de ESRGAN
-        if proteger_caras and usar_esrgan:
+        if proteger_caras and (usar_esrgan or fondo_clasico):
             salida = (salida * (1 - mask) + base * mask).round().astype(np.uint8)
             fila['accion'] = 'fiel (bicúbica)'
 

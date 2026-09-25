@@ -98,7 +98,10 @@ por cara", "Problemas comunes" y "Licencias".
   0.3, solo en luminancia: 31.53 dB / SSIM 0.8827, la única variante medida
   que supera a la bicúbica. Más iteraciones o más `amount` bajan el PSNR.
   `fondo_clasico=True` (en `CONFIG_SUELTA`) la usa como fondo de
-  `mejorar_foto()` cuando `usar_esrgan=False`.
+  `mejorar_foto()` cuando `usar_esrgan=False`; bajo cada cara sigue la
+  bicúbica fiel (`proteger_caras`), porque con el fondo NL-means debajo la
+  similitud SFace bajaba 0.98 → 0.965. Pipeline completo con GFPGAN en la
+  foto demo: PSNR 31.23 → 31.33, SSIM 0.871 → 0.879, ID igual (0.952).
 - **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
   defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
   default a CodeFormer para clientes que pagan.

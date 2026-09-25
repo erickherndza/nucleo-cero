@@ -53,6 +53,19 @@ Probando con una foto real de WhatsApp (grupo familiar, 1048×718), el fondo y l
 
 **Trade-off**: el fondo ya no tiene el "extra" de detalle que promete Real-ESRGAN — se queda al nivel de una bicúbica bien afilada. Pendiente investigar si hay parámetros de Real-ESRGAN (denoise, tile) que eviten el artefacto sin desactivarlo del todo.
 
+## Hallazgo 2026-09-25: `deconvolucion_clasica()` v1 distorsionaba, arreglada y medida
+
+La primera versión de `deconvolucion_clasica()` (RL 15 iteraciones + `unsharp_mask` con `channel_axis=-1`) tenía dos bugs, no uno: `channel_axis=-1` en scikit-image corta filas en vez de canales (`slice_at_axis` mal indexado), dejando parte del array sin inicializar — la función podía devolver una foto negra/basura. Aun corrigiendo el eje a `channel_axis=2`, la salida seguía distorsionada: **24.31 dB** contra **31.38 dB** de una bicúbica pura (misma foto demo degradada ×1/1.6, JPEG q35) — peor que no hacer nada. Causas: marco oscuro por Richardson-Lucy sin relleno de bordes, halos, y ruido JPEG amplificado por la deconvolución.
+
+**Fix v2**: reducir ruido primero (NL-means, `h=3`) → bicúbica → Richardson-Lucy con solo 5 iteraciones y `padding='reflect'` → `unsharp_mask` con `amount=0.3`, aplicado solo a la luminancia (no a los 3 canales RGB por separado). Resultado: **31.53 dB / SSIM 0.8827** — la única variante medida que supera a la bicúbica pura. Más iteraciones de RL o más `amount` de afilado bajan el PSNR otra vez; no subirlos sin volver a medir contra bicúbica.
+
+Es la función que usa `fondo_clasico=True` (en `CONFIG_SUELTA`, Celda 3) como fondo del pipeline con IA cuando `usar_esrgan=False`.
+
+## Otros dos bugs encontrados en pruebas reales (2026-09-25)
+
+- **Las corridas se acumulaban**: `salidas_sueltas/` nunca se limpiaba entre corridas — subir una foto nueva y volver a correr 3→4→5 metía las fotos de pruebas anteriores en el mismo zip de descarga. Fix: la Celda 3 ahora borra la carpeta (`shutil.rmtree`) antes de recrearla, así cada descarga solo trae lo de esa corrida.
+- **`cv2.imwrite` fallaba en la Celda 4** con `error: (-2:Unspecified error) could not find a writer for the specified extension`. El nombre que Colab le da al archivo subido (`files.upload()`) no siempre tiene una extensión que OpenCV reconozca para escritura. Fix: la salida clásica siempre se guarda como `.png`, sin depender de la extensión original.
+
 ## CELDA 1 — Instalación y modelos
 
 

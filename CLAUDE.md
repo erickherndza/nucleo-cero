@@ -99,6 +99,17 @@ por cara", "Problemas comunes" y "Licencias".
   que supera a la bicúbica. Más iteraciones o más `amount` bajan el PSNR.
   `fondo_clasico=True` (en `CONFIG_SUELTA`) la usa como fondo de
   `mejorar_foto()` cuando `usar_esrgan=False`.
+- **`salidas_sueltas/` se limpia al inicio de la Celda 3**
+  (`shutil.rmtree` + `os.makedirs`) para que cada corrida nueva no
+  acumule las fotos de pruebas anteriores en el zip de descarga — antes
+  de este fix, subir una foto nueva y volver a correr 3→4→5 metía
+  también las fotos de corridas previas en el mismo zip.
+- **La salida de `deconvolucion_clasica()` (Celda 4) siempre se guarda
+  como `.png`**, sin depender de la extensión del archivo subido — el
+  nombre que `files.upload()` le da al archivo no siempre tiene una
+  extensión que `cv2.imwrite` sepa escribir (daba
+  `error: (-2:Unspecified error) could not find a writer for the
+  specified extension`).
 - **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
   defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
   default a CodeFormer para clientes que pagan.

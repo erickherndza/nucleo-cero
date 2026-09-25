@@ -431,7 +431,7 @@ import nucleo; import importlib; importlib.reload(nucleo)
 
 CONFIG_SUELTA = dict(usar_esrgan=False, restaurador='gfpgan', mezcla=0.5, cara_minima=64, umbral_identidad=0.80, proteger_caras=True)
 CARPETA_SALIDA_SUELTA = 'salidas_sueltas'
-os.makedirs(CARPETA_SALIDA_SUELTA, exist_ok=True)
+shutil.rmtree(CARPETA_SALIDA_SUELTA, ignore_errors=True); os.makedirs(CARPETA_SALIDA_SUELTA, exist_ok=True)
 
 subidas = files.upload()
 for nombre in subidas:
@@ -458,8 +458,9 @@ for nombre in subidas:
   print(f'\n━━━━━━━━ {nombre} (clásico) ━━━━━━━━')
   img = nucleo.leer_imagen(nombre)
   resultado = nucleo.deconvolucion_clasica(img)
-  base, ext = os.path.splitext(nombre)
-  ruta_salida = os.path.join(CARPETA_SALIDA_SUELTA, f'{base}_clasica{ext}')
+  base = os.path.splitext(nombre)[0]
+  # siempre PNG: la extensión subida puede no ser escribible (p. ej. .raw de WhatsApp)
+  ruta_salida = os.path.join(CARPETA_SALIDA_SUELTA, f'{base}_clasica.png')
   cv2.imwrite(ruta_salida, resultado)
   display(IPImage(ruta_salida, width=1000))
 ```

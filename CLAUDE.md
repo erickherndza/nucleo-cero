@@ -28,7 +28,7 @@ ni las puertas E0-E3 aplican a lo que hay en la raíz.
 ## Cómo funciona el pipeline
 
 ```
-foto WhatsApp ─┬─► Real-ESRGAN ×4 → reducir a 1024 px ──────► FONDO (limpio)
+foto WhatsApp ─┬─► Real-ESRGAN ×4 → reducir a tamaño final ─► FONDO (limpio, si usar_esrgan=True)
                ├─► bicúbica + enfoque ────────────────────► bajo cada CARA (fiel)
                └─► YuNet detecta caras ─► alinear 512×512 desde la original
                         └─► GFPGAN restaura ─► mezcla 50 % ─► ¿SFace ≥ 0.80?
@@ -40,6 +40,30 @@ desde la versión ya ampliada por ESRGAN (evita restaurar sobre información
 ya inventada). Caras < 64 px no se restauran (muy poca información real
 para verificar nada): quedan con la versión fiel bicúbica.
 
+Existe además una alternativa **100% clásica** (sin IA, sin pesos
+preentrenados): `deconvolucion_clasica()` en `nucleo.py` — bicúbica +
+deconvolución Richardson-Lucy + unsharp mask. Se usa en la CELDA 4
+("Reforzar") del notebook, sobre las mismas fotos ya subidas en la CELDA 3,
+como alternativa de comparación cuando el resultado con IA no convence.
+
+## Estructura del notebook (5 celdas, actualizada 2026-09-24)
+
+1. **CELDA 1** — instala `spandrel`/`spandrel_extra_arches`, descarga los
+   pesos (~450MB).
+2. **CELDA 2** — escribe `nucleo.py` (`%%writefile`): todas las funciones,
+   incluida `mejorar_foto()` (IA) y `deconvolucion_clasica()` (clásica).
+3. **CELDA 3** — `files.upload()` → procesa con `mejorar_foto()` → guarda en
+   `salidas_sueltas/`.
+4. **CELDA 4** — reforzar: corre `deconvolucion_clasica()` sobre las mismas
+   fotos de la Celda 3 (variable `subidas`), sin volver a subir nada.
+5. **CELDA 5** — zip de `salidas_sueltas/` (versión IA + clásica) + descarga.
+
+Las celdas viejas (lote desde carpeta de Drive, celda de auditoría con foto
+de referencia, celda de limpieza de fotos demo) se eliminaron — ya no son
+parte del flujo activo. Quedan como documentación de referencia después de
+la Celda 2 las secciones "Referencia de parámetros", "Cómo leer el reporte
+por cara", "Problemas comunes" y "Licencias".
+
 ## Invariantes verificados (no re-descubrir)
 
 - **Verificación de identidad no es opcional**: cada cara restaurada se
@@ -47,10 +71,21 @@ para verificar nada): quedan con la versión fiel bicúbica.
   similitud cae bajo `umbral_identidad` (0.80 por defecto), se descarta la
   restauración y queda la versión fiel — no hay forma de que una cara
   "cambiada" pase sin que el reporte lo marque.
-- **`banda_transicion`** (0.10 por defecto) evita el salto binario feo en
-  fotos grupales: en la franja justo bajo el umbral, la mezcla se reduce
-  proporcionalmente en vez de aceptar/rechazar todo o nada. Con
-  `banda_transicion=0` se recupera el comportamiento binario antiguo.
+- El umbral de identidad es **binario** en la versión actual de
+  `mejorar_foto()`: si `sim < umbral_identidad`, la restauración se
+  descarta por completo (no existe una zona gris de mezcla parcial —
+  `banda_transicion` que mencionaban avances previos ya no está en el
+  código; no asumir que existe sin verificar primero).
+- **`ancho` por defecto ahora es `None`, no `1024` fijo**: si la foto
+  original ya supera 1024px de ancho, escala ×2 en vez de reducirla — antes
+  del fix (2026-09-24) una foto de WhatsApp más grande de lo normal se
+  reducía en vez de mejorarse. Ver `mejorar_foto()` en `nucleo.py`.
+- **Real-ESRGAN puede posterizar/"pintar" el fondo** en fotos ya
+  comprimidas por WhatsApp — confirmado en prueba real 2026-09-24 (ver
+  hallazgo completo en `upscale.md`). Fix: `usar_esrgan=False` en
+  `CONFIG_SUELTA` dentro de la Celda 3. No asumir que Real-ESRGAN siempre
+  mejora el fondo sin verificar la imagen completa (el efecto no se nota
+  en miniaturas, solo a resolución real).
 - **CodeFormer es NO comercial** (S-Lab License 1.0). El restaurador por
   defecto es GFPGAN (Apache 2.0) precisamente por esto — no cambiar el
   default a CodeFormer para clientes que pagan.

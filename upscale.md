@@ -1,6 +1,6 @@
 # nucleo-cero · Mejora de fotos de WhatsApp sin inventar caras
 
-Notebook para **Google Colab** (Entorno de ejecución → Cambiar tipo → **GPU T4**). Copia cada bloque en una celda y ejecútalas en orden.
+Notebook para **Google Colab** (Entorno de ejecución → Cambiar tipo → **GPU T4**). Ejecuta las celdas en orden.
 
 ## Qué cambió respecto a tu versión
 
@@ -43,71 +43,18 @@ Fotos buenas degradadas como WhatsApp (÷1.6, desenfoque, JPEG q25) y recuperada
 - CodeFormer fue el que más cambió las caras. Además su licencia es **no comercial**, así que el valor por defecto es GFPGAN (Apache 2.0).
 - Tiempo: ~2 min por foto en CPU. En GPU T4 deberían ser segundos (no lo pude medir aquí).
 
----
+## Hallazgo 2026-09-24: Real-ESRGAN puede "pintar" el fondo
 
-## Análisis comparativo: Krea 2 Identity Edit (ingeniería inversa, 2026-09-24)
+Probando con una foto real de WhatsApp (grupo familiar, 1048×718), el fondo y la ropa salieron con un efecto posterizado/acuarela — bloques de color planos en vez de textura, muy notorio en telas y fondos con patrones. No es sutil, se ve a simple vista en la imagen completa (no tanto en miniaturas).
 
-Se revisaron dos proyectos que el cliente señaló como "editores que mejoran la calidad de
-imágenes": el repo [comfyui-krea2edit](https://github.com/lbouaraba/comfyui-krea2edit) (nodos
-de ComfyUI, Apache-2.0, 654★) y el modelo
-[conradlocke/krea2-identity-edit](https://huggingface.co/conradlocke/krea2-identity-edit) (los
-pesos, bajo licencia Krea 2 Community). Se clonó el repo y se leyó su código fuente
-(`__init__.py`, `CHANGELOG.md`) para entender cómo funciona por dentro, no solo su README.
+**Causa probable**: Real-ESRGAN amplifica los bloques de compresión JPEG de una foto ya comprimida por WhatsApp, en vez de limpiarlos — mientras más se escala, peor se nota. El escalado automático a 2× (cuando la foto original ya supera 1024px, ver `ancho=None` en `mejorar_foto`) probablemente empeora esto al darle más superficie donde manifestarse.
 
-**Qué son en realidad:** un LoRA sobre *Krea 2 Raw*, un transformer de difusión (MMDiT) de
-12.9B parámetros propiedad de Krea AI, más un paquete de nodos que le añade doble
-condicionamiento: la imagen fuente entra como tokens de latente VAE (apariencia) **y**
-también se la describe un modelo de visión-lenguaje (Qwen3-VL) mientras lee la instrucción
-de edición (semántica). Es un **editor generativo por instrucciones** — "pon esta ropa a la
-persona", "quita al hombre de la izquierda", "cambia el fondo a una playa" — no un
-restaurador. La "preservación de identidad" es una capacidad **entrenada** con un dataset
-específico (`change_eye_face_head_person` de stablellama), no verificada en cada ejecución:
-su propia documentación admite que el parecido es "texture-faithful, proportion-conservative"
-— la piel y el tono se parecen, pero la geometría facial distintiva **tiende a regresar a
-proporciones típicas**, y no hay ningún mecanismo que detecte cuándo pasó eso y lo corrija.
+**Fix aplicado, confirmado que funciona**: `usar_esrgan=False` en `CONFIG_SUELTA` (Celda 3). Con esto el fondo se queda en bicúbica + enfoque (fiel, sin inventar textura) y solo las caras siguen mejorando vía GFPGAN. Probado contra la misma foto: el efecto pintura desapareció por completo, caras siguen viéndose más nítidas.
 
-**Diferencia de fondo con nucleo-cero:**
-
-| | Krea 2 Identity Edit | nucleo-cero |
-|---|---|---|
-| Tarea | Edición creativa guiada por texto (puede inventar contenido a propósito) | Restauración fiel de una foto ya existente (evita inventar) |
-| Tamaño del modelo | Transformer de difusión, 12.9B parámetros + LoRA + VLM 4B | Real-ESRGAN + GFPGAN, decenas de millones de parámetros |
-| Hardware | ComfyUI + GPU con VRAM seria (Turbo: ~1 min a 2MP) | CPU (~2 min) o GPU T4 gratuita de Colab (segundos) |
-| ¿Verifica identidad? | No: confía en el entrenamiento y en el ojo del usuario | Sí: similitud SFace medida y comparada contra un umbral en cada cara |
-| Si la identidad cambió demasiado | No hay forma automática de saberlo ni de corregirlo | Se descarta la restauración y queda la versión fiel (bicúbica) |
-
-En otras palabras: nucleo-cero ya hace, de forma medida y automática, lo que Krea 2 Identity
-Edit promete en el nombre pero no comprueba. Son herramientas complementarias, no rivales
-directas — si un cliente pide "ponme en la playa" eso es edición generativa (dominio de
-Krea2Edit); si pide "mi foto de WhatsApp borrosa, más nítida, pero que siga siendo yo", eso
-es exactamente lo que hace nucleo-cero.
-
-**Novedad real aplicada — mezcla parcial en la zona gris de identidad.** Krea2Edit expone un
-dial continuo (`ref_boost`) para subir o bajar cuánto se "aferra" el modelo a la apariencia
-de referencia. nucleo-cero no tenía nada continuo: `umbral_identidad` era un corte binario
-(similitud ≥ umbral → se pega toda la mezcla; si no, se descarta el 100%). Eso puede verse
-mal en fotos grupales cuando dos caras quedan a ambos lados del umbral por una diferencia de
-similitud mínima (una queda "con IA", la de al lado "cruda"). Se añadió `banda_transicion`
-(por defecto 0.10): en esa franja bajo el umbral, la mezcla se reduce proporcionalmente en
-vez de saltar de golpe a 0%. Con `banda_transicion=0` se recupera el comportamiento binario
-anterior. Ver el bloque `# 3) Verificación de identidad` en `nucleo.py` (Celda 2).
-
-**Ideas de Krea2Edit que se revisaron y NO se adoptaron (y por qué):**
-- **Geometría "fit" sin estirar al encajar relaciones de aspecto** — resuelve un problema que
-  nucleo-cero no tiene: sus caras se alinean con una transformación afín a una plantilla FFHQ
-  de 5 puntos, así que nunca se estiran ni deforman.
-- **Condicionamiento dual VAE + VLM (Qwen3-VL) leyendo una instrucción de texto** — es
-  específico de modelos de difusión guiados por texto; nucleo-cero no tiene prompt ni
-  instrucción que dar, restaura, no interpreta órdenes.
-- **Reordenar el VAE-encode para no competir por VRAM con el sampler** — problema de modelos
-  de 12.9B parámetros que no caben junto a todo lo demás en memoria; Real-ESRGAN y GFPGAN
-  caben enteros en la GPU T4 gratuita sin ese conflicto.
-- **CFG negativo "grounded"** — concepto propio de *classifier-free guidance* en difusión; no
-  existe un equivalente en un pipeline GAN sin texto como este.
-
----
+**Trade-off**: el fondo ya no tiene el "extra" de detalle que promete Real-ESRGAN — se queda al nivel de una bicúbica bien afilada. Pendiente investigar si hay parámetros de Real-ESRGAN (denoise, tile) que eviten el artefacto sin desactivarlo del todo.
 
 ## CELDA 1 — Instalación y modelos
+
 
 ```python
 # ═══════════════════════════════════════════════════════════════════
@@ -140,7 +87,9 @@ print(f'\nOpenCV {cv2.__version__} · FaceDetectorYN: {hasattr(cv2, "FaceDetecto
 print('GPU ⚡' if torch.cuda.is_available() else '⚠️ Sin GPU: Entorno de ejecución → Cambiar tipo → T4')
 ```
 
+
 ## CELDA 2 — Motor (`nucleo.py`)
+
 
 ```python
 %%writefile nucleo.py
@@ -158,8 +107,10 @@ from PIL import Image, ImageOps
 import spandrel
 import spandrel_extra_arches
 
-spandrel_extra_arches.install()  # añade CodeFormer al cargador
-
+try:
+      spandrel_extra_arches.install()  # añade CodeFormer al cargador
+except Exception:
+          pass  # ya registrado (reload en Celda 3)
 W = 'weights'
 DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 _CACHE = {}
@@ -186,7 +137,7 @@ def _detector(w, h):
     if 'yunet' not in _CACHE:
         _CACHE['yunet'] = cv2.FaceDetectorYN.create(
             os.path.join(W, 'face_detection_yunet_2023mar.onnx'), '', (w, h),
-            score_threshold=0.7, nms_threshold=0.3, top_k=500)
+            score_threshold=0.5, nms_threshold=0.3, top_k=500)
     d = _CACHE['yunet']
     d.setInputSize((w, h))
     return d
@@ -293,7 +244,7 @@ def restaurar_cara_512(crop_bgr, restaurador, fidelidad):
 # ─── Pipeline principal ─────────────────────────────────────────────
 def mejorar_foto(
     ruta,
-    ancho=1024,               # ancho final; el alto se calcula manteniendo proporción
+    ancho=None,                # ancho final; None = automático (ver referencia_ancho abajo)
     alto=None,                # si das ancho Y alto, se fuerza ese tamaño exacto
     usar_esrgan=True,         # False = solo base Photoshop + caras
     restaurar_caras=True,
@@ -303,12 +254,14 @@ def mejorar_foto(
     mezcla=0.5,               # % de la cara restaurada sobre el fondo (0..1)
     cara_minima=64,           # px de ancho en la ORIGINAL; más pequeñas no se tocan
     umbral_identidad=0.80,    # similitud SFace mínima entre cara original y restaurada
-    banda_transicion=0.10,    # zona gris bajo el umbral: mezcla parcial en vez de todo/nada
     guardar=True,
+    carpeta_salida='salidas', # dónde se guardan resultado/base/comparación si guardar=True
     verbose=True,
 ):
     img = leer_imagen(ruta)
     h0, w0 = img.shape[:2]
+    if ancho is None:
+        ancho = int(round(w0 * 2)) if w0 > 1024 else 1024
     if alto is None:
         alto = int(round(h0 * ancho / w0))
     size = (ancho, alto)
@@ -367,28 +320,17 @@ def mejorar_foto(
                               borderMode=cv2.BORDER_REFLECT)
         rest = restaurar_cara_512(crop, restaurador, fidelidad)
         pegada = cv2.warpAffine(rest, Mi, size, flags=cv2.INTER_AREA if s < 1 else cv2.INTER_CUBIC)
-
-        # 3) Verificación de identidad con la mezcla completa (candidata de referencia)
         m = mask * mezcla
         candidata = (salida * (1 - m) + pegada * m).round().astype(np.uint8)
+
+        # 3) Verificación de identidad: ¿sigue siendo la misma persona?
         sim = similitud(img, cara, candidata, _escalar_cara(cara, s))
         fila['similitud'] = round(sim, 3)
-
-        piso = umbral_identidad - banda_transicion
         if sim >= umbral_identidad:
             salida = candidata
             fila['accion'] = 'restaurada ✓'
-        elif banda_transicion > 0 and sim >= piso:
-            # Zona gris: en vez de aceptar/rechazar todo o nada, se reduce la mezcla
-            # en proporción a cuánto cambió la identidad. Sin esto, dos caras de una
-            # foto grupal justo a ambos lados del umbral se ven muy distintas entre sí
-            # (una "con IA", la de al lado "cruda") aunque su similitud casi no difiera.
-            factor = (sim - piso) / banda_transicion
-            m_parcial = mask * (mezcla * factor)
-            salida = (salida * (1 - m_parcial) + pegada * m_parcial).round().astype(np.uint8)
-            fila['accion'] = f'parcial ({factor * 100:.0f}% mezcla, sim {sim:.2f} en zona gris)'
         else:
-            fila['accion'] = f'DESCARTADA (sim {sim:.2f} < {piso:.2f}) → queda la versión fiel'
+            fila['accion'] = f'DESCARTADA (sim {sim:.2f} < {umbral_identidad}) → queda la versión fiel'
         reporte.append(fila)
 
     for f in reporte:
@@ -398,10 +340,10 @@ def mejorar_foto(
     rutas = {}
     if guardar:
         nombre = os.path.splitext(os.path.basename(ruta))[0]
-        os.makedirs('salidas', exist_ok=True)
-        rutas['resultado'] = f'salidas/{nombre}_mejorada.png'
-        rutas['photoshop'] = f'salidas/{nombre}_base_photoshop.png'
-        rutas['comparacion'] = f'salidas/{nombre}_comparacion.jpg'
+        os.makedirs(carpeta_salida, exist_ok=True)
+        rutas['resultado'] = f'{carpeta_salida}/{nombre}_mejorada.png'
+        rutas['photoshop'] = f'{carpeta_salida}/{nombre}_base_photoshop.png'
+        rutas['comparacion'] = f'{carpeta_salida}/{nombre}_comparacion.jpg'
         cv2.imwrite(rutas['resultado'], salida)
         cv2.imwrite(rutas['photoshop'], base)
         comp = np.hstack([base, salida])
@@ -452,61 +394,87 @@ def prueba_con_referencia(ruta_buena, factor=1.6, calidad=35, desenfoque=0.8, **
     print('\nMás alto = mejor en todas las columnas. Si nucleo-cero no gana en ID, '
           'la IA está cambiando caras: sube umbral_identidad o baja mezcla.')
     return filas, gt, base, salida
+
+# ─── Alternativa 100% clásica: deconvolución (sin IA, sin pesos preentrenados) ─
+def deconvolucion_clasica(img_bgr, ancho=None, alto=None, psf_sigma=1.5, iteraciones=15, sharpen_radius=1.5, sharpen_amount=1.0):
+    """Escala (bicúbica) + deconvoluciona (Richardson-Lucy) + afila (unsharp mask)."""
+    from skimage.restoration import richardson_lucy
+    from skimage.filters import unsharp_mask
+    h0, w0 = img_bgr.shape[:2]
+    ancho = ancho if ancho is not None else (int(round(w0 * 2)) if w0 > 1024 else 1024)
+    alto = alto if alto is not None else int(round(h0 * ancho / w0))
+    up = cv2.resize(img_bgr, (ancho, alto), interpolation=cv2.INTER_CUBIC)
+    tam = int(psf_sigma * 6) | 1
+    k = cv2.getGaussianKernel(tam, psf_sigma)
+    psf = k @ k.T
+    img_float = up.astype(np.float64) / 255.0
+    canales = [richardson_lucy(img_float[:, :, c], psf, num_iter=iteraciones, clip=True) for c in range(3)]
+    deconv = np.clip(np.stack(canales, axis=-1), 0, 1)
+    afilada = unsharp_mask(deconv, radius=sharpen_radius, amount=sharpen_amount, channel_axis=-1)
+    return (np.clip(afilada, 0, 1) * 255).astype(np.uint8)
+
 ```
 
-## CELDA 3 — Subir fotos, procesar y descargar
+
+## CELDA 3 — Subir foto y procesar (sin usar Drive)
+
+
 
 ```python
 # ═══════════════════════════════════════════════════════════════════
-# CELDA 3 — SUBIR → PROCESAR → VER → DESCARGAR (acepta varias fotos)
+# CELDA 3 — SUBIR FOTO Y PROCESAR (sin usar Drive)
 # ═══════════════════════════════════════════════════════════════════
-import importlib, shutil, cv2
-import nucleo; importlib.reload(nucleo)
+import shutil, os
 from google.colab import files
 from IPython.display import display, Image as IPImage
+import nucleo; import importlib; importlib.reload(nucleo)
 
-# ── CONFIGURACIÓN ─────────────────────────────────────────────────
-CONFIG = dict(
-    ancho=1024,             # 640×480 → 1024×768
-    restaurador='gfpgan',   # 'gfpgan' (uso comercial OK) · 'codeformer' (solo pruebas)
-    mezcla=0.5,             # 0.3 más natural · 0.7 más "retocado"
-    cara_minima=64,         # sube a 96 si ves caras pequeñas raras
-    umbral_identidad=0.80,  # sube a 0.85 para ser más estricto
-    proteger_caras=True,    # bajo las caras usa bicúbica, no ESRGAN
-)
+CONFIG_SUELTA = dict(usar_esrgan=False, restaurador='gfpgan', mezcla=0.5, cara_minima=64, umbral_identidad=0.80, proteger_caras=True)
+CARPETA_SALIDA_SUELTA = 'salidas_sueltas'
+os.makedirs(CARPETA_SALIDA_SUELTA, exist_ok=True)
 
 subidas = files.upload()
 for nombre in subidas:
-    print(f'\n━━━━━━━━ {nombre} ━━━━━━━━')
-    salida, base, reporte, rutas = nucleo.mejorar_foto(nombre, **CONFIG)
-    display(IPImage(rutas['comparacion'], width=1000))
-
-shutil.make_archive('fotos_mejoradas', 'zip', 'salidas')
-files.download('fotos_mejoradas.zip')
+  print(f'\n━━━━━━━━ {nombre} ━━━━━━━━')
+  salida, base, reporte, rutas = nucleo.mejorar_foto(nombre, carpeta_salida=CARPETA_SALIDA_SUELTA, **CONFIG_SUELTA)
+  display(IPImage(rutas['comparacion'], width=1000))
 ```
 
-## CELDA 4 (opcional) — Auditoría: ¿de verdad mejora?
 
-Sube una foto **buena** (nítida, con caras). La celda la degrada como WhatsApp, la recupera con los dos métodos y mide contra el original. Úsala para calibrar `mezcla` y `umbral_identidad` con fotos parecidas a las de tus clientes.
+## CELDA 4 — Reforzar (alternativa 100% clásica: deconvolución, sin IA)
+
+Si el resultado con IA se ve "pintado" o posterizado (puede pasar con Real-ESRGAN sobre fondos ya comprimidos), esta celda corre la misma foto por un pipeline clásico: bicúbica + deconvolución Richardson-Lucy + afilado — sin pesos preentrenados, sin GAN. No sube nada de nuevo, usa las fotos que ya subiste en la Celda 3.
+
+
 
 ```python
 # ═══════════════════════════════════════════════════════════════════
-# CELDA 4 — PRUEBA CON REFERENCIA (foto buena → simular WhatsApp → medir)
+# CELDA 4 — REFORZAR (alternativa 100% clásica: deconvolución, sin IA)
 # ═══════════════════════════════════════════════════════════════════
-import importlib, cv2, numpy as np
+import importlib
 import nucleo; importlib.reload(nucleo)
-from google.colab import files
-from IPython.display import display, Image as IPImage
 
-buena = list(files.upload().keys())[0]
-filas, gt, base, salida = nucleo.prueba_con_referencia(
-    buena, factor=1.6, calidad=35, desenfoque=0.8,
-    mezcla=0.5, umbral_identidad=0.80)
-
-cv2.imwrite('salidas/_auditoria.jpg', np.hstack([base, salida, gt]))
-print('\nIzquierda: bicúbica + enfoque · Centro: nucleo-cero · Derecha: original real')
-display(IPImage('salidas/_auditoria.jpg', width=1200))
+for nombre in subidas:
+  print(f'\n━━━━━━━━ {nombre} (clásico) ━━━━━━━━')
+  img = nucleo.leer_imagen(nombre)
+  resultado = nucleo.deconvolucion_clasica(img)
+  base, ext = os.path.splitext(nombre)
+  ruta_salida = os.path.join(CARPETA_SALIDA_SUELTA, f'{base}_clasica{ext}')
+  cv2.imwrite(ruta_salida, resultado)
+  display(IPImage(ruta_salida, width=1000))
 ```
+
+
+## CELDA 5 — Descargar resultado
+
+
+
+```python
+# CELDA 5 — DESCARGAR RESULTADO (fotos con IA + las clásicas de la celda anterior)
+shutil.make_archive('fotos_mejoradas', 'zip', CARPETA_SALIDA_SUELTA)
+files.download('fotos_mejoradas.zip')
+```
+
 
 ---
 
@@ -523,24 +491,14 @@ display(IPImage('salidas/_auditoria.jpg', width=1200))
 | `mezcla` | Porcentaje de la cara restaurada sobre la versión fiel | 0.3 natural · 0.5 · 0.7 |
 | `cara_minima` | Ancho mínimo (px en la original) para restaurar | 64 · 96 estricto |
 | `umbral_identidad` | Similitud SFace mínima o se descarta la restauración | 0.75 · 0.80 · 0.85 estricto |
-| `banda_transicion` | Zona gris bajo `umbral_identidad`: mezcla parcial en vez de todo/nada | 0.10 · 0 = binario (comportamiento anterior) |
-
-```python
-# Ejemplos
-nucleo.mejorar_foto('foto.jpg')                                   # por defecto: 1024 px
-nucleo.mejorar_foto('foto.jpg', ancho=1920)                       # para web Full HD
-nucleo.mejorar_foto('foto.jpg', restaurar_caras=False)            # solo fondo, caras fieles
-nucleo.mejorar_foto('foto.jpg', usar_esrgan=False)                # sin IA en el fondo
-nucleo.mejorar_foto('foto.jpg', mezcla=0.3, umbral_identidad=0.85, cara_minima=96)  # ultra conservador
-```
+| `carpeta_salida` | Dónde se guardan resultado/base/comparación (si `guardar=True`) | `'salidas'` · `'imagenes mejoradas'` |
 
 ## Cómo leer el reporte por cara
 
 ```
-cara 1: 90px → restaurada ✓  sim=0.973                    ← la IA la mejoró sin cambiar a la persona
-cara 2: 85px → parcial (40% mezcla, sim 0.76 en zona gris) ← identidad dudosa: se suaviza la mezcla en vez de aceptar/rechazar de golpe
-cara 3: 80px → DESCARTADA (sim 0.68 < 0.70)                ← la IA la cambió demasiado: queda la versión fiel
-cara 5: 41px → fiel, sin restaurar (< 64px)                ← muy pequeña: no hay información real
+cara 1: 90px → restaurada ✓  sim=0.973         ← la IA la mejoró sin cambiar a la persona
+cara 3: 80px → DESCARTADA (sim 0.78 < 0.8)     ← la IA la cambió: queda la versión fiel
+cara 5: 41px → fiel, sin restaurar (< 64px)    ← muy pequeña: no hay información real
 ```
 
 ## Problemas comunes

@@ -17,6 +17,11 @@ ni las puertas E0-E3 aplican a lo que hay en la raíz.
 
 - `nucleo_cero.ipynb` — notebook para **Google Colab** (Entorno de
   ejecución → Cambiar tipo → **GPU T4**). Es el pipeline en sí.
+- `nucleo_cero_v2.ipynb` — última versión guardada desde Colab (2026-10-25). Solo
+  difiere de `nucleo_cero.ipynb` en una línea: `proteger_caras` también aplica
+  con `fondo_clasico`.
+- `nucleo_cero/` — **versión local** (Mac M1) del mismo motor, ver sección
+  "Versión local y API" más abajo.
 - `upscale.md` — misma fuente que el notebook, en Markdown con explicación
   de cada celda, tabla de resultados medidos, comparación con Krea 2
   Identity Edit y referencia completa de parámetros. Si el notebook y este
@@ -63,6 +68,42 @@ de referencia, celda de limpieza de fotos demo) se eliminaron — ya no son
 parte del flujo activo. Quedan como documentación de referencia después de
 la Celda 2 las secciones "Referencia de parámetros", "Cómo leer el reporte
 por cara", "Problemas comunes" y "Licencias".
+
+## Versión local y API (añadido 2026-10-25)
+
+Objetivo del proyecto: pasar de notebook de Colab a algoritmo local y luego a
+web app (plan completo en `documentaci_n_del_proyecto_n_cleo_cero.md`, sin
+versionar). Hecho hasta ahora:
+
+- `nucleo_cero/motor.py` — mismo pipeline que la CELDA 2 (`mejorar_foto()`,
+  `deconvolucion_clasica()`…). Solo cambian rutas y dispositivo.
+- `nucleo_cero/config.py` — dispositivo `cuda` > `mps` (GPU del M1) > `cpu`;
+  se fuerza con `NUCLEO_DEVICE=cpu`. Pesos en `weights/` (o `NUCLEO_PESOS`).
+- `nucleo_cero/modelos.py` — descarga de pesos (CELDA 1).
+- `nucleo_cero/benchmark.py` — tiempo por foto; la 1.ª foto (carga de modelos)
+  se reporta aparte.
+- `nucleo_cero/__main__.py` — CLI: `python -m nucleo_cero pesos|mejorar|benchmark`.
+  Usa `CONFIG_SUELTA` de la Celda 3 (`usar_esrgan=False`, `fondo_clasico=True`).
+- `nucleo_cero/api.py` — FastAPI v1 **síncrona**: `POST /api/v1/procesar`
+  (campo `foto`, `esrgan` opcional), `GET /api/v1/estado/{id}`,
+  `/resultado/{id}`, `/metricas`. Arranque:
+  `.venv/bin/uvicorn nucleo_cero.api:app --port 8000`.
+  Trabajos en memoria (se pierden al reiniciar), un candado serializa el
+  motor, límite 25 MB, solo jpg/jpeg/png/webp, nombre en disco = `job_id`
+  (nunca el del cliente). Sin cola ni autenticación todavía.
+- Entorno: `.venv/` (Python 3.12) con `requirements.txt`. `weights/`, `.venv/`
+  y `data/` están en `.gitignore`.
+
+Medido en MacBook Pro M1 Pro (MPS), foto demo 960×1280, config suelta:
+3 caras restauradas, sim 0.984 / 0.989 / 0.963; benchmark con 4 copias de la
+misma foto: ~1.5 s/foto (~2350/hora), 3.7 s la primera por carga de modelos;
+vía API la primera petición tardó 4.1 s. **No medido:** fotos reales variadas,
+`usar_esrgan=True` en MPS, peticiones concurrentes, calidad visual de la salida
+frente a Colab (solo se comprobó que corre y el reporte de identidad).
+
+Pendiente: interfaz web simple (subir, antes/después, descargar), cola de
+trabajos + autenticación, `Dockerfile` (en Linux sin `mps` el pipeline cae a
+CPU, ~2 min/foto: condiciona el hosting).
 
 ## Invariantes verificados (no re-descubrir)
 
@@ -124,9 +165,9 @@ por cara", "Problemas comunes" y "Licencias".
   ve más limpio. En caras pequeñas la IA cambia más la identidad: por eso
   existen `cara_minima` y `umbral_identidad`. Ver `upscale.md` para la
   tabla completa.
-- No hay Docker ni entorno local fijo para este pipeline: corre en Colab.
-  `.venv/` y `.pytest_cache/` en la raíz son restos del proyecto clásico
-  archivado en `old/` y no hacen falta para este notebook.
+- Sin Docker todavía. El pipeline corre en Colab o en local (`.venv/`, ver
+  "Versión local y API"). El `.pytest_cache/` de la raíz es resto del proyecto
+  clásico archivado en `old/`.
 
 ## Las dos métricas que ya NO aplican aquí (sí aplicaban en `old/`)
 

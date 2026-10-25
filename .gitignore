@@ -23,3 +23,8 @@ old/experimentos/E3_rafaga/rafaga_real/*
 
 # old/ — salidas generadas del pipeline torch (regenerables)
 old/experimentos/E3_rafaga/salida/
+.venv/
+weights/
+data/output/
+__pycache__/
+*.pyc

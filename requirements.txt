@@ -1,0 +1,8 @@
+torch
+torchvision
+spandrel
+spandrel_extra_arches
+opencv-python
+numpy
+Pillow
+scikit-image

@@ -101,8 +101,11 @@ vía API la primera petición tardó 4.1 s. **No medido:** fotos reales variadas
 `usar_esrgan=True` en MPS, peticiones concurrentes, calidad visual de la salida
 frente a Colab (solo se comprobó que corre y el reporte de identidad).
 
-Pendiente: interfaz web simple (subir, antes/después, descargar), cola de
-trabajos + autenticación, `Dockerfile` (en Linux sin `mps` el pipeline cae a
+**SIGUIENTE PASO al retomar:** interfaz web simple — una página HTML servida por
+la misma API (sin React), para subir una foto, ver antes/después y descargar el
+resultado. Validar el flujo antes de invertir en más frontend.
+
+Después: cola de trabajos + autenticación, `Dockerfile` (en Linux sin `mps` el pipeline cae a
 CPU, ~2 min/foto: condiciona el hosting).
 
 ## Invariantes verificados (no re-descubrir)

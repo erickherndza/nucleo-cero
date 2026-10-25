@@ -25,6 +25,6 @@ old/experimentos/E3_rafaga/rafaga_real/*
 old/experimentos/E3_rafaga/salida/
 .venv/
 weights/
-data/output/
+data/
 __pycache__/
 *.pyc

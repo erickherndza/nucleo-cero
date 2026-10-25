@@ -6,3 +6,6 @@ opencv-python
 numpy
 Pillow
 scikit-image
+fastapi
+uvicorn
+python-multipart
